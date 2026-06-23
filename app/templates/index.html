@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cerca de CUPS</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A5%B8%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <main class="container">
+        <nav class="page-nav" aria-label="Breadcrumb">
+            <span class="page-nav-current">Inici</span>
+            <a
+                class="page-nav-external-link"
+                href="https://docs.google.com/spreadsheets/d/1qtSCndgbPQPA1fiqvZV026hTgvyZp2QpM2qUUPwbomQ/edit?usp=sharing"
+                target="_blank"
+                rel="noopener noreferrer"
+            >👷 Formulari de peticions i incidències</a>
+        </nav>
+
+        <section class="panel hero hero-search-panel">
+            <span class="eyebrow">Consulta ràpida</span>
+            <h1>Cerca per CUPS</h1>
+            <p>Troba un punt de subministrament i consulta la fitxa i l'històric mensual des d'un únic lloc.</p>
+            <form action="/" method="get" class="search-form hero-search-form">
+                <input type="text" name="cups" value="{{ cups }}" placeholder="Escriu un CUPS complet o parcial" autofocus>
+                <button type="submit">Buscar</button>
+            </form>
+            <div class="hero-inline-actions">
+                <p class="muted">Es mostren fins a 100 coincidències per cerca.</p>
+                <a href="/imports" class="button-link button-link-light">Pujar fitxers i veure imports</a>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Resultats CUPS</h2>
+            {% if not show_records %}
+            <div class="empty-state">
+                <h3>Busca un CUPS per veure resultats</h3>
+                <p class="muted">La llista no es carrega per defecte. Escriu un CUPS complet o parcial per trobar coincidències.</p>
+            </div>
+            {% else %}
+            <div class="table-wrap">
+                <table class="records-table">
+                    <thead>
+                        <tr>
+                            <th>CUPS</th>
+                            <th>Codi distribuidora</th>
+                            <th>Distribuidora</th>
+                            <th>Codi postal</th>
+                            <th>Municipi</th>
+                            <th>Tarifa ATR</th>
+                            <th>Actualitzat</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for record in records %}
+                        <tr>
+                            <td class="cell-cups"><a href="/records/{{ record.cups }}">{{ record.cups }}</a></td>
+                            <td>{{ record.codigoEmpresaDistribuidora or "-" }}</td>
+                            <td>{{ record.nombreEmpresaDistribuidora or "-" }}</td>
+                            <td>{{ record.codigoPostalPS or "-" }}</td>
+                            <td>{{ record.municipioPS or "-" }}</td>
+                            <td>{{ record.tarifa or "-" }}</td>
+                            <td>{{ record.uploaded_at or "-" }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7">No s'ha trobat cap CUPS.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </section>
+        <footer class="page-footer">
+            <p class="page-version">Versio v{{ app_version }}</p>
+        </footer>
+    </main>
+    <script src="/static/app.js"></script>
+</body>
+</html>

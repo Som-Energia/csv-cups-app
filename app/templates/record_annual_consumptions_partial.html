@@ -1,0 +1,40 @@
+{% if has_consumption_data and annual_consumption_summary %}
+<section class="panel">
+    <h2>Resum anual</h2>
+    <p class="muted consumption-copy">Càlcul replicat al moment a partir dels períodes de consum, seguint la mateixa lògica de la plantilla Excel.</p>
+    <div class="consumption-summary-grid">
+        {% for item in annual_consumption_summary.summary %}
+        <div class="summary-item consumption-summary-item">
+            <strong>{{ item.label }}</strong>
+            <span>{{ item.value }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="annual-groups-grid">
+    {% for group in annual_consumption_summary.groups %}
+    <section class="panel annual-group-panel">
+        <h3>{{ group.title }}</h3>
+        <div class="summary-grid annual-summary-grid">
+            {% for item in group["items"] %}
+            <div class="summary-item annual-summary-item">
+                <strong title="{{ item.field_name }}">{{ item.label }}</strong>
+                <span>{{ item.value }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endfor %}
+</section>
+{% elif has_consumption_data %}
+<section class="panel empty-state">
+    <h3>No s'han pogut calcular els consums anuals</h3>
+    <p class="muted">Falten dates vàlides als períodes importats o el format actual no permet reproduir el càlcul de l'Excel.</p>
+</section>
+{% else %}
+<section class="panel empty-state">
+    <h3>No hi ha consums per aquest CUPS</h3>
+    <p class="muted">Encara no s'ha importat cap fitxer de consums per aquest punt.</p>
+</section>
+{% endif %}

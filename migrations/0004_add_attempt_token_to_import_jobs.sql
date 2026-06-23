@@ -1,0 +1,2 @@
+ALTER TABLE import_jobs
+ADD COLUMN IF NOT EXISTS attempt_token VARCHAR NOT NULL DEFAULT '';

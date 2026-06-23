@@ -1,0 +1,39 @@
+x-app-common: &app-common
+  build: .
+  environment:
+    DATABASE_URL: postgresql+psycopg2://csvapp:csvapp@postgres:5432/csvapp
+    REDIS_URL: redis://redis:6379/0
+    UPLOAD_DIR: /app/storage/uploads
+  volumes:
+    - ./storage:/app/storage
+  depends_on:
+    - postgres
+    - redis
+
+services:
+  app:
+    <<: *app-common
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+
+  worker:
+    <<: *app-common
+    command: ["python", "worker.py"]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: csvapp
+      POSTGRES_USER: csvapp
+      POSTGRES_PASSWORD: csvapp
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+
+volumes:
+  postgres_data:

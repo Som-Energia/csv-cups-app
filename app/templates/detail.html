@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ record.cups }}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A5%B8%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <main class="container">
+        <nav class="page-nav" aria-label="Breadcrumb">
+            <a href="/">Inici</a>
+            <span class="page-nav-separator">/</span>
+            <span class="page-nav-current">CUPS {{ record.cups }}</span>
+            <a
+                class="page-nav-external-link"
+                href="https://docs.google.com/spreadsheets/d/1qtSCndgbPQPA1fiqvZV026hTgvyZp2QpM2qUUPwbomQ/edit?usp=sharing"
+                target="_blank"
+                rel="noopener noreferrer"
+            >👷 Formulari de peticions i incidències</a>
+        </nav>
+
+        <section class="panel hero compact detail-hero">
+            <h1>{{ record.cups }}</h1>
+            <p>Fitxa del punt de subministrament i històric mensual.</p>
+            {% if has_ps_data or has_consumption_data %}
+            <div class="hero-actions">
+                {% if has_ps_data %}
+                <a class="button-link button-link-light" href="/records/{{ record.cups }}/ps.csv">Descarregar PS</a>
+                {% endif %}
+                {% if has_consumption_data %}
+                <a class="button-link button-link-light" href="/records/{{ record.cups }}/consumptions.csv">Descarregar consums</a>
+                {% endif %}
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="panel tabs-panel">
+            <div class="tabs-nav" role="tablist" aria-label="Tipus de dades del CUPS" data-record-tabs>
+                <a href="/records/{{ record.cups }}?tab=ps" class="tab-link {% if active_tab == 'ps' %}active{% endif %} {% if not has_ps_data %}disabled{% endif %}" data-tab-target="ps" aria-selected="{% if active_tab == 'ps' %}true{% else %}false{% endif %}">Fitxa del Punt</a>
+                <a href="/records/{{ record.cups }}?tab=consumptions" class="tab-link {% if active_tab == 'consumptions' %}active{% endif %} {% if not has_consumption_data %}disabled{% endif %}" data-tab-target="consumptions" aria-selected="{% if active_tab == 'consumptions' %}true{% else %}false{% endif %}">Històric mensual</a>
+                <a href="/records/{{ record.cups }}?tab=annual" class="tab-link {% if active_tab == 'annual' %}active{% endif %} {% if not has_consumption_data %}disabled{% endif %}" data-tab-target="annual" aria-selected="{% if active_tab == 'annual' %}true{% else %}false{% endif %}">Consums anuals</a>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Resum</h2>
+            <div class="summary-grid">
+                {% for item in record_summary %}
+                <div class="summary-item">
+                    <strong title="{{ item.field_name }}">{{ item.label }}</strong>
+                    <span>{{ item.value }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section data-record-tab-panel="ps" {% if active_tab != "ps" %}hidden{% endif %}>
+            {% if has_ps_data %}
+            <section class="detail-sections-grid">
+                {% for group in record_groups %}
+                <section class="panel section-panel">
+                    <h2>{{ group.name }}</h2>
+                    <div class="table-wrap">
+                        <table class="field-table">
+                            <tbody>
+                                {% for field in group.fields %}
+                                <tr>
+                                    <th title="{{ field.name }}">{{ field.label }}</th>
+                                    <td>{{ field.value }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+                {% endfor %}
+            </section>
+            {% else %}
+            <section class="panel empty-state">
+                <h3>No hi ha dades PS per aquest CUPS</h3>
+                <p class="muted">Aquest CUPS té consums importats, però no una fitxa PS associada.</p>
+            </section>
+            {% endif %}
+        </section>
+
+        <section data-record-tab-panel="consumptions" {% if active_tab != "consumptions" %}hidden{% endif %}>
+            {% if has_consumption_data %}
+            {% if should_defer_consumptions %}
+            <div id="consumption-panel-content" data-deferred-panel data-partial-url="/records/{{ record.cups }}/consumptions/partial" aria-busy="true">
+                <section class="panel empty-state">
+                    <h3>Carregant consums...</h3>
+                    <p class="muted">Carregarem l'històric mensual quan obris aquesta pestanya.</p>
+                </section>
+            </div>
+            {% else %}
+            {% include "record_consumptions_partial.html" %}
+            {% endif %}
+            {% else %}
+            <section class="panel empty-state">
+                <h3>No hi ha consums per aquest CUPS</h3>
+                <p class="muted">Encara no s'ha importat cap fitxer de consums per aquest punt.</p>
+            </section>
+            {% endif %}
+        </section>
+
+        <section data-record-tab-panel="annual" {% if active_tab != "annual" %}hidden{% endif %}>
+            {% if has_consumption_data %}
+            {% if should_defer_annual_consumptions %}
+            <div data-deferred-panel data-partial-url="/records/{{ record.cups }}/annual-consumptions/partial" aria-busy="true">
+                <section class="panel empty-state">
+                    <h3>Calculant consums anuals...</h3>
+                    <p class="muted">Carregarem el resum anual quan obris aquesta pestanya.</p>
+                </section>
+            </div>
+            {% else %}
+            {% include "record_annual_consumptions_partial.html" %}
+            {% endif %}
+            {% else %}
+            <section class="panel empty-state">
+                <h3>No hi ha consums per aquest CUPS</h3>
+                <p class="muted">Encara no s'ha importat cap fitxer de consums per aquest punt.</p>
+            </section>
+            {% endif %}
+        </section>
+        <footer class="page-footer">
+            <p class="page-version">Versio v{{ app_version }}</p>
+        </footer>
+    </main>
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Importacions</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A5%B8%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <main class="container">
+        <nav class="page-nav" aria-label="Breadcrumb">
+            <a href="/">Inici</a>
+            <span class="page-nav-separator">/</span>
+            <span class="page-nav-current">Importacions</span>
+            <a
+                class="page-nav-external-link"
+                href="https://docs.google.com/spreadsheets/d/1qtSCndgbPQPA1fiqvZV026hTgvyZp2QpM2qUUPwbomQ/edit?usp=sharing"
+                target="_blank"
+                rel="noopener noreferrer"
+            >👷 Formulari de peticions i incidències</a>
+        </nav>
+
+        <section class="panel hero compact">
+            <h1>Importacions</h1>
+            <p>Puja fitxers CSV o ZIP i segueix l'estat dels últims processos d'importació.</p>
+        </section>
+
+        <section class="grid imports-layout">
+            <div class="panel">
+                <h2>Pujar CSV o ZIP</h2>
+                <form id="upload-form">
+                    <input type="file" name="file" accept=".csv,.zip" required>
+                    <button type="submit">Pujar i posar en cua</button>
+                </form>
+                <div class="progress-block">
+                    <div class="progress"><div id="upload-progress-bar" class="progress-bar"></div></div>
+                    <p id="upload-progress-text" class="muted">Esperant fitxer.</p>
+                </div>
+                <p id="upload-feedback" class="notice error hidden"></p>
+                <p class="muted">Admet fitxers CSV i ZIP amb un sol CSV compatible. Els fitxers grans es pugen primer a disc i es processen després en segon pla.</p>
+            </div>
+
+            <div class="panel imports-side-panel">
+                <h2>Accés ràpid</h2>
+                <p class="muted">Si el que vols és consultar un punt, torna a la cerca principal.</p>
+                <a href="/" class="button-link">Tornar a cercar CUPS</a>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Imports recents</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Importació</th>
+                            <th>Estat</th>
+                            <th>Files processades</th>
+                            <th>Creades</th>
+                            <th>Actualitzades</th>
+                            <th>Errors</th>
+                            <th>Iniciat</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in jobs %}
+                        <tr>
+                            <td><a href="/jobs/{{ job.id }}">#{{ job.id }}</a></td>
+                            <td title="{{ job.filename }}">{{ build_job_display_title(job) }}</td>
+                            <td><span class="badge badge-{{ job.status }}">{{ status_labels.get(job.status, job.status) }}</span></td>
+                            <td>{{ job.processed_rows }}</td>
+                            <td>{{ job.created_rows }}</td>
+                            <td>{{ job.updated_rows }}</td>
+                            <td>{{ job.error_rows }}</td>
+                            <td>{{ format_datetime_minute(job.started_at) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8">Encara no hi ha imports.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <footer class="page-footer">
+            <p class="page-version">Versio v{{ app_version }}</p>
+        </footer>
+    </main>
+    <script src="/static/app.js"></script>
+</body>
+</html>

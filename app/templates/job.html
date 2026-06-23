@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ job_display_title }}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A5%B8%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <main class="container">
+        <nav class="page-nav" aria-label="Breadcrumb">
+            <a href="/">Inici</a>
+            <span class="page-nav-separator">/</span>
+            <a href="/imports">Importacions</a>
+            <span class="page-nav-separator">/</span>
+            <span class="page-nav-current">{{ job_display_title }}</span>
+            <a
+                class="page-nav-external-link"
+                href="https://docs.google.com/spreadsheets/d/1qtSCndgbPQPA1fiqvZV026hTgvyZp2QpM2qUUPwbomQ/edit?usp=sharing"
+                target="_blank"
+                rel="noopener noreferrer"
+            >👷 Formulari de peticions i incidències</a>
+        </nav>
+
+        <section class="panel hero compact">
+            <h1>{{ job_display_title }}</h1>
+            <p>{{ job.filename }}</p>
+            <div class="hero-actions">
+                <button id="requeue-job-button" type="button" class="hidden">Tornar a posar en cua</button>
+                <button id="retry-failed-chunks-button" type="button" class="hidden">Reintentar chunks fallits</button>
+            </div>
+            <section id="debug-job-panel" class="debug-panel hidden">
+                <div class="debug-panel-header">
+                    <strong>Accions de depuració</strong>
+                    <span class="muted">Visible amb ?debug=1 o Shift + D</span>
+                </div>
+                <p class="muted debug-panel-copy">La importació forçada reinicia des de zero imports que han quedat dividint o processant.</p>
+                <div class="debug-panel-actions">
+                    <button id="force-requeue-job-button" type="button" class="button-secondary hidden">Forçar importació</button>
+                    <button id="cleanup-artifacts-button" type="button" class="button-secondary hidden">Esborrar fitxers i chunks</button>
+                </div>
+            </section>
+            <p id="job-action-feedback" class="notice hidden"></p>
+        </section>
+
+        <section class="grid metrics-grid">
+            <div class="panel">
+                <h2>Estat</h2>
+                <p class="status-line"><span id="job-status" class="badge badge-{{ job.status }}">{{ status_labels.get(job.status, job.status) }}</span></p>
+                <p id="job-error" class="notice error {% if not job.error_message %}hidden{% endif %}">{{ job.error_message or "" }}</p>
+            </div>
+            <div class="panel">
+                <h2>Progrés de pujada</h2>
+                <div class="progress"><div id="upload-bar" class="progress-bar"></div></div>
+                <p id="upload-text" class="muted"></p>
+            </div>
+            <div class="panel">
+                <h2>Progrés de processament</h2>
+                <div class="progress"><div id="processing-bar" class="progress-bar secondary"></div></div>
+                <p id="processing-text" class="muted"></p>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Resum de chunks</h2>
+            <div class="summary-grid">
+                <div class="summary-item"><strong>Total chunks</strong><span id="total-chunks">0</span></div>
+                <div class="summary-item"><strong>En cua</strong><span id="queued-chunks">0</span></div>
+                <div class="summary-item"><strong>Processant</strong><span id="processing-chunks">0</span></div>
+                <div class="summary-item"><strong>Completats</strong><span id="completed-chunks">0</span></div>
+                <div class="summary-item"><strong>Fallits</strong><span id="failed-chunks">0</span></div>
+            </div>
+        </section>
+
+        <section id="split-progress-panel" class="panel hidden">
+            <h2>Progrés de divisió</h2>
+            <div class="progress"><div id="split-progress-bar" class="progress-bar secondary"></div></div>
+            <p id="split-progress-text" class="muted"></p>
+            <p id="split-progress-meta" class="muted"></p>
+        </section>
+
+        <section class="panel">
+            <h2>Mètriques en viu</h2>
+            <div class="detail-grid">
+                <div class="detail-item"><strong>Files processades</strong><span id="processed-rows">0</span></div>
+                <div class="detail-item"><strong>Files creades</strong><span id="created-rows">0</span></div>
+                <div class="detail-item"><strong>Files actualitzades</strong><span id="updated-rows">0</span></div>
+                <div class="detail-item"><strong>Files amb error</strong><span id="error-rows">0</span></div>
+                <div class="detail-item"><strong>Files / segon</strong><span id="rows-per-second">0</span></div>
+                <div class="detail-item"><strong>ETA</strong><span id="eta">-</span></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Velocitat de processament</h2>
+            <canvas id="speed-chart" height="120"></canvas>
+        </section>
+
+        <section class="panel">
+            <h2>Chunks</h2>
+            <div class="hero-actions">
+                <button id="chunks-prev-button" type="button">Anterior</button>
+                <span id="chunks-page-info" class="muted">Pàgina 1 de 1</span>
+                <button id="chunks-next-button" type="button">Següent</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Chunk</th>
+                            <th>Estat</th>
+                            <th>Total files</th>
+                            <th>Processades</th>
+                            <th>Creades</th>
+                            <th>Actualitzades</th>
+                            <th>Errors</th>
+                            <th>Darrer error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="chunks-table-body">
+                        <tr>
+                            <td colspan="8">Esperant chunks...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <footer class="page-footer">
+            <p class="page-version">Versio v{{ app_version }}</p>
+        </footer>
+    </main>
+
+    <script>
+        window.CSV_CUPS_JOB_ID = {{ job.id }};
+    </script>
+    <script src="/static/job.js"></script>
+</body>
+</html>

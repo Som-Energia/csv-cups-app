@@ -1,0 +1,53 @@
+{% if has_consumption_data %}
+<section class="panel">
+    <h2>Històric mensual</h2>
+    <p class="muted consumption-copy">Revisa ràpidament cada període i obre només el detall del mes que vols inspeccionar.</p>
+    <div class="consumption-summary-grid">
+        {% for item in consumption_summary %}
+        <div class="summary-item consumption-summary-item">
+            <strong>{{ item.label }}</strong>
+            <span>{{ item.value }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="consumption-history-list">
+    {% for row in consumption_history %}
+    <details class="panel consumption-period-card" {% if row.is_open %}open{% endif %}>
+        <summary class="consumption-period-summary">
+            <div class="consumption-period-main">
+                <strong>{{ row.period }}</strong>
+                <span class="muted">Tarifa {{ row.tariff }}</span>
+            </div>
+            <div class="consumption-period-meta">
+                <span><strong>Tipus lectura:</strong> {{ row.reading_type }}</span>
+                <span><strong>Actualitzat:</strong> {{ row.updated_at }}</span>
+            </div>
+            <span class="consumption-toggle">Mostrar detall</span>
+        </summary>
+
+        <div class="consumption-groups-grid">
+            {% for group in row.groups %}
+            <section class="consumption-group-card">
+                <h3>{{ group.title }}</h3>
+                <div class="consumption-fields-grid">
+                    {% for field in group.fields %}
+                    <div class="detail-item compact">
+                        <strong title="{{ field.name }}">{{ field.label }}</strong>
+                        <span>{{ field.value }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endfor %}
+        </div>
+    </details>
+    {% endfor %}
+</section>
+{% else %}
+<section class="panel empty-state">
+    <h3>No hi ha consums per aquest CUPS</h3>
+    <p class="muted">Encara no s'ha importat cap fitxer de consums per aquest punt.</p>
+</section>
+{% endif %}
