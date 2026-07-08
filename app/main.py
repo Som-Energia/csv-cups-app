@@ -26,6 +26,7 @@ from app.schemas import (
     JobChunkPageOut,
     JobChunkOut,
     JobOut,
+    RecordBonoSocialOut,
     RecordConsumptionOut,
     RecordOut,
     RetryFailedChunksResponse,
@@ -955,6 +956,17 @@ def get_record(cups: str, db: Session = Depends(get_db)):
     if record is None:
         raise HTTPException(status_code=404, detail="Record not found")
     return record
+
+
+@app.get("/api/records/{cups}/bono-social", response_model=RecordBonoSocialOut)
+def get_record_bono_social(cups: str, db: Session = Depends(get_db)):
+    record = db.query(Record).filter(Record.cups == cups).first()
+    if record is None:
+        raise HTTPException(status_code=404, detail="Record not found")
+    return {
+        "cups": record.cups,
+        "hasBonoSocial": str(record.aplicacionBonoSocial or "").strip() == "1",
+    }
 
 
 @app.get("/api/records/{cups}/consumptions", response_model=list[RecordConsumptionOut])

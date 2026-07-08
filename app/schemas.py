@@ -67,6 +67,11 @@ class RecordOut(BaseModel):
     aplicacionBonoSocial: str | None = None
 
 
+class RecordBonoSocialOut(BaseModel):
+    cups: str
+    hasBonoSocial: bool
+
+
 class RecordConsumptionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
