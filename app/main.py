@@ -324,6 +324,11 @@ def build_record_summary(
                     "field_name": "nombreEmpresaDistribuidora",
                 },
                 {
+                    "label": "Ref. cadastral",
+                    "value": format_display_value(record.referenciaCatastralPS, "referenciaCatastralPS"),
+                    "field_name": "referenciaCatastralPS",
+                },
+                {
                     "label": "Municipi",
                     "value": format_display_value(record.municipioPS, "municipioPS"),
                     "field_name": "municipioPS",

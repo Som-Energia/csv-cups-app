@@ -1,7 +1,13 @@
 PS_CSV_HEADERS = [
     "codigoEmpresaDistribuidora",
-    "cups",
     "nombreEmpresaDistribuidora",
+    "cups",
+    "referenciaCatastralPS",
+    "XPS",
+    "YPS",
+    "HusoPS",
+    "BandaPS",
+    "PaisPS",
     "codigoPostalPS",
     "municipioPS",
     "codigoProvinciaPS",
@@ -173,8 +179,14 @@ AUTOCONSUMO_TABLE_FIELDS = [
 
 FIELD_LABELS_CA = {
     "codigoEmpresaDistribuidora": "Codi distribuidora",
-    "cups": "CUPS",
     "nombreEmpresaDistribuidora": "Distribuidora",
+    "cups": "CUPS",
+    "referenciaCatastralPS": "Referència cadastral",
+    "XPS": "Coordenada X",
+    "YPS": "Coordenada Y",
+    "HusoPS": "Huso",
+    "BandaPS": "Banda",
+    "PaisPS": "País",
     "codigoPostalPS": "Codi postal",
     "municipioPS": "Municipi",
     "codigoProvinciaPS": "Provincia",
@@ -264,8 +276,8 @@ FIELD_GROUPS = [
         "Identificació",
         [
             "codigoEmpresaDistribuidora",
-            "cups",
             "nombreEmpresaDistribuidora",
+            "cups",
             "codigoComercializadora",
             "tipoIdTitular",
             "codigoTipoSuministro",
@@ -275,9 +287,15 @@ FIELD_GROUPS = [
     (
         "Ubicació",
         [
+            "referenciaCatastralPS",
+            "PaisPS",
             "codigoPostalPS",
             "municipioPS",
             "codigoProvinciaPS",
+            "XPS",
+            "YPS",
+            "HusoPS",
+            "BandaPS",
         ],
     ),
     (

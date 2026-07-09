@@ -9,8 +9,14 @@ class RecordOut(BaseModel):
     id: int
     uploaded_at: datetime
     codigoEmpresaDistribuidora: str | None = None
-    cups: str
     nombreEmpresaDistribuidora: str | None = None
+    cups: str
+    referenciaCatastralPS: str | None = None
+    XPS: str | None = None
+    YPS: str | None = None
+    HusoPS: str | None = None
+    BandaPS: str | None = None
+    PaisPS: str | None = None
     codigoPostalPS: str | None = None
     municipioPS: str | None = None
     codigoProvinciaPS: str | None = None
