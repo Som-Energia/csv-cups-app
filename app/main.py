@@ -193,10 +193,17 @@ def build_job_display_title(job: ImportJob) -> str:
                 period = "{} {}".format(month, year)
 
     info_parts = []
-    if "SIPS2" in tokens and "CONSUMOS" in tokens and "ELECTRICIDAD" in tokens:
-        info_parts.append("Consums")
-    if "SIPS2" in tokens and "PS" in tokens and "ELECTRICIDAD" in tokens:
-        info_parts.append("Informació PS")
+    import_type_labels = {
+        "CAUREPARTO": "Autoconsum",
+        "VERTIDOS": "Vertidos",
+        "CAUCIL": "CauCil",
+        "CONSUMOS": "Consums",
+        "PS": "Informació PS",
+    }
+    for token, label in import_type_labels.items():
+        if token in tokens:
+            info_parts.append(label)
+            break
     if "peninsular" in tokens:
         info_parts.append("Peninsular")
     elif "balear" in tokens or "baleares" in tokens:
