@@ -221,3 +221,24 @@ class RecordConsumption(Base):
         "codigodhequipodemedida", String, key="codigoDHEquipoDeMedida", nullable=True
     )
     codigoTipoLectura = Column("codigotipolectura", String, key="codigoTipoLectura", nullable=True)
+
+
+class RecordAutoconsumo(Base):
+    __tablename__ = "record_autoconsumos"
+    __table_args__ = (
+        UniqueConstraint(
+            "cau",
+            "fechaInicioReparto",
+            "cups",
+            "horaCoeficienteVariableReparto",
+            name="uq_record_autoconsumos_logical_row",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    uploaded_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    cau = Column(String, nullable=False, index=True)
+    fechaInicioReparto = Column(String, nullable=False, index=True)
+    cups = Column(String, nullable=False, index=True)
+    horaCoeficienteVariableReparto = Column(String, nullable=False, default="")
+    coeficienteReparto = Column(String, nullable=True)

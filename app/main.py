@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.constants import (
+    AUTOCONSUMO_CSV_HEADERS,
     ATR_TARIFF_LABELS,
     CONSUMPTION_CSV_HEADERS,
     CSV_HEADERS,
@@ -21,7 +22,7 @@ from app.constants import (
 )
 from app.database import get_db, init_db
 from app.jobs import enqueue_import
-from app.models import ImportJob, ImportJobChunk, Record, RecordConsumption
+from app.models import ImportJob, ImportJobChunk, Record, RecordAutoconsumo, RecordConsumption
 from app.schemas import (
     JobChunkPageOut,
     JobChunkOut,
@@ -249,7 +250,19 @@ def build_field_items(source, field_names: list[str]):
     return items
 
 
-def build_record_summary(record: Record | None, cups: str, has_consumption_data: bool):
+def build_record_summary(
+    record: Record | None,
+    cups: str,
+    has_consumption_data: bool,
+    has_autoconsumo_data: bool,
+):
+    available_data = []
+    if record is not None:
+        available_data.append("PS")
+    if has_consumption_data:
+        available_data.append("consumptions")
+    if has_autoconsumo_data:
+        available_data.append("autoconsumo")
     summary = [
         {
             "label": "CUPS",
@@ -258,13 +271,7 @@ def build_record_summary(record: Record | None, cups: str, has_consumption_data:
         },
         {
             "label": "Dades disponibles",
-            "value": (
-                "PS i consums"
-                if record is not None and has_consumption_data
-                else "Informació PS"
-                if record is not None
-                else "Consums"
-            ),
+            "value": ", ".join(available_data) if available_data else "-",
             "field_name": "data_type",
         },
     ]
@@ -379,6 +386,67 @@ def build_consumption_summary(consumptions: list[RecordConsumption]):
         {"label": "Període més antic", "value": format_consumption_period(oldest)},
         {"label": "Última tarifa", "value": format_display_value(latest.codigoTarifaATR, "codigoTarifaATR")},
     ]
+
+
+def has_autoconsumos(db: Session, cups: str) -> bool:
+    return (
+        db.query(RecordAutoconsumo.id)
+        .filter(RecordAutoconsumo.cups == cups)
+        .limit(1)
+        .first()
+        is not None
+    )
+
+
+def get_autoconsumos_for_cups(db: Session, cups: str) -> list[RecordAutoconsumo]:
+    return (
+        db.query(RecordAutoconsumo)
+        .filter(RecordAutoconsumo.cups == cups)
+        .order_by(
+            RecordAutoconsumo.fechaInicioReparto.desc(),
+            RecordAutoconsumo.horaCoeficienteVariableReparto.asc(),
+            RecordAutoconsumo.id.desc(),
+        )
+        .all()
+    )
+
+
+def build_autoconsumo_summary(autoconsumos: list[RecordAutoconsumo]):
+    if not autoconsumos:
+        return []
+    unique_caus = {row.cau for row in autoconsumos if row.cau}
+    latest = autoconsumos[0]
+    return [
+        {"label": "Rows imported", "value": str(len(autoconsumos))},
+        {"label": "CAUs", "value": str(len(unique_caus))},
+        {
+            "label": "Latest reparto start",
+            "value": format_display_value(latest.fechaInicioReparto, "fechaInicioReparto"),
+        },
+        {
+            "label": "Last updated",
+            "value": format_display_value(latest.uploaded_at, "uploaded_at"),
+        },
+    ]
+
+
+def build_autoconsumo_rows(autoconsumos: list[RecordAutoconsumo]):
+    rows = []
+    for row in autoconsumos:
+        rows.append(
+            {
+                "id": row.id,
+                "cau": format_display_value(row.cau, "cau"),
+                "fechaInicioReparto": format_display_value(row.fechaInicioReparto, "fechaInicioReparto"),
+                "horaCoeficienteVariableReparto": format_display_value(
+                    row.horaCoeficienteVariableReparto,
+                    "horaCoeficienteVariableReparto",
+                ),
+                "coeficienteReparto": format_display_value(row.coeficienteReparto, "coeficienteReparto"),
+                "uploaded_at": format_display_value(row.uploaded_at, "uploaded_at"),
+            }
+        )
+    return rows
 
 
 def parse_numeric_value(value) -> float:
@@ -643,38 +711,53 @@ def imports_page(request: Request, db: Session = Depends(get_db)):
 def record_detail(request: Request, cups: str, db: Session = Depends(get_db)):
     record = db.query(Record).filter(Record.cups == cups).first()
     has_consumption_data = has_consumptions(db, cups)
-    if record is None and not has_consumption_data:
+    has_autoconsumo_data = has_autoconsumos(db, cups)
+    if record is None and not has_consumption_data and not has_autoconsumo_data:
         raise HTTPException(status_code=404, detail="Record not found")
     active_tab = request.query_params.get("tab", "ps")
-    if active_tab not in ("ps", "consumptions", "annual"):
+    if active_tab not in ("ps", "consumptions", "annual", "autoconsumo"):
         active_tab = "ps"
     if record is None and active_tab == "ps":
-        active_tab = "consumptions"
+        if has_consumption_data:
+            active_tab = "consumptions"
+        elif has_autoconsumo_data:
+            active_tab = "autoconsumo"
     subject = record if record is not None else SimpleNamespace(cups=cups)
     should_defer_consumptions = has_consumption_data and active_tab != "consumptions"
     should_defer_annual_consumptions = has_consumption_data and active_tab != "annual"
     consumptions = []
+    autoconsumos = []
     annual_consumption_summary = None
     if has_consumption_data and not should_defer_consumptions:
         consumptions = get_consumptions_for_cups(db, cups)
     if has_consumption_data and not should_defer_annual_consumptions:
         annual_source = consumptions if consumptions else get_consumptions_for_cups(db, cups)
         annual_consumption_summary = build_annual_consumption_summary(annual_source)
+    if has_autoconsumo_data and active_tab == "autoconsumo":
+        autoconsumos = get_autoconsumos_for_cups(db, cups)
     return templates.TemplateResponse(
         "detail.html",
         {
             "request": request,
             "record": subject,
             "record_groups": build_record_groups(record),
-            "record_summary": build_record_summary(record, cups, has_consumption_data),
+            "record_summary": build_record_summary(
+                record,
+                cups,
+                has_consumption_data,
+                has_autoconsumo_data,
+            ),
             "active_tab": active_tab,
             "has_ps_data": record is not None,
             "has_consumption_data": has_consumption_data,
+            "has_autoconsumo_data": has_autoconsumo_data,
             "should_defer_consumptions": should_defer_consumptions,
             "should_defer_annual_consumptions": should_defer_annual_consumptions,
             "consumption_history": build_consumption_history(consumptions),
             "consumption_summary": build_consumption_summary(consumptions),
             "annual_consumption_summary": annual_consumption_summary,
+            "autoconsumo_rows": build_autoconsumo_rows(autoconsumos),
+            "autoconsumo_summary": build_autoconsumo_summary(autoconsumos),
         },
     )
 
@@ -738,6 +821,48 @@ def download_record_consumptions_csv(cups: str, db: Session = Depends(get_db)):
         rows=[serialize_csv_row(consumption, CONSUMPTION_CSV_HEADERS) for consumption in consumptions],
         headers=CONSUMPTION_CSV_HEADERS,
         filename=f"{cups}_consumptions.csv",
+    )
+
+
+@app.get("/records/{cups}/autoconsumos.csv")
+def download_record_autoconsumos_csv(cups: str, db: Session = Depends(get_db)):
+    autoconsumos = get_autoconsumos_for_cups(db, cups)
+    if not autoconsumos:
+        record_exists = db.query(Record.id).filter(Record.cups == cups).limit(1).first() is not None
+        if not record_exists:
+            raise HTTPException(status_code=404, detail="Record not found")
+        raise HTTPException(status_code=404, detail="Autoconsumo rows not found")
+    return build_csv_response(
+        rows=[serialize_csv_row(autoconsumo, AUTOCONSUMO_CSV_HEADERS) for autoconsumo in autoconsumos],
+        headers=AUTOCONSUMO_CSV_HEADERS,
+        filename=f"{cups}_autoconsumos.csv",
+    )
+
+
+@app.get("/autoconsumos/{autoconsumo_id}", response_class=HTMLResponse)
+def autoconsumo_detail(request: Request, autoconsumo_id: int, db: Session = Depends(get_db)):
+    autoconsumo = db.query(RecordAutoconsumo).filter(RecordAutoconsumo.id == autoconsumo_id).first()
+    if autoconsumo is None:
+        raise HTTPException(status_code=404, detail="Autoconsumo row not found")
+    linked_record = db.query(Record).filter(Record.cups == autoconsumo.cups).first()
+    return templates.TemplateResponse(
+        "autoconsumo_detail.html",
+        {
+            "request": request,
+            "autoconsumo": autoconsumo,
+            "linked_record": linked_record,
+            "field_items": build_field_items(
+                autoconsumo,
+                [
+                    "cau",
+                    "fechaInicioReparto",
+                    "cups",
+                    "horaCoeficienteVariableReparto",
+                    "coeficienteReparto",
+                    "uploaded_at",
+                ],
+            ),
+        },
     )
 
 

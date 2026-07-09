@@ -85,14 +85,24 @@ CONSUMPTION_CSV_HEADERS = [
     "codigoTipoLectura",
 ]
 
+AUTOCONSUMO_CSV_HEADERS = [
+    "cau",
+    "fechaInicioReparto",
+    "cups",
+    "horaCoeficienteVariableReparto",
+    "coeficienteReparto",
+]
+
 CSV_HEADERS = PS_CSV_HEADERS
 
 IMPORT_FORMAT_PS = "ps"
 IMPORT_FORMAT_CONSUMPTION = "consumption"
+IMPORT_FORMAT_AUTOCONSUMO = "autoconsumo"
 
 IMPORT_FORMAT_HEADERS = {
     IMPORT_FORMAT_PS: PS_CSV_HEADERS,
     IMPORT_FORMAT_CONSUMPTION: CONSUMPTION_CSV_HEADERS,
+    IMPORT_FORMAT_AUTOCONSUMO: AUTOCONSUMO_CSV_HEADERS,
 }
 
 ATR_TARIFF_LABELS = {
@@ -148,6 +158,15 @@ CONSUMPTION_TABLE_FIELDS = [
     "potenciaDemandadaEnWP6",
     "codigoDHEquipoDeMedida",
     "codigoTipoLectura",
+    "uploaded_at",
+]
+
+AUTOCONSUMO_TABLE_FIELDS = [
+    "cau",
+    "fechaInicioReparto",
+    "cups",
+    "horaCoeficienteVariableReparto",
+    "coeficienteReparto",
     "uploaded_at",
 ]
 
@@ -233,6 +252,10 @@ FIELD_LABELS_CA = {
     "potenciaDemandadaEnWP6": "Potència demandada P6",
     "codigoTipoLectura": "Tipus lectura",
     "uploaded_at": "Actualitzat",
+    "cau": "CAU",
+    "fechaInicioReparto": "Reparto start",
+    "horaCoeficienteVariableReparto": "Variable coefficient hour",
+    "coeficienteReparto": "Reparto coefficient",
 }
 
 

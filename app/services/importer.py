@@ -12,10 +12,15 @@ from sqlalchemy import tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.constants import IMPORT_FORMAT_CONSUMPTION, IMPORT_FORMAT_HEADERS, IMPORT_FORMAT_PS
+from app.constants import (
+    IMPORT_FORMAT_AUTOCONSUMO,
+    IMPORT_FORMAT_CONSUMPTION,
+    IMPORT_FORMAT_HEADERS,
+    IMPORT_FORMAT_PS,
+)
 from app.database import SessionLocal
 from app.jobs import enqueue_import_chunk
-from app.models import ImportJob, ImportJobChunk, Record, RecordConsumption
+from app.models import ImportJob, ImportJobChunk, Record, RecordAutoconsumo, RecordConsumption
 from app.settings import settings
 
 
@@ -77,6 +82,13 @@ def deduplicate_rows(import_format, rows):
     for row in rows:
         if import_format == IMPORT_FORMAT_PS:
             key = row["cups"]
+        elif import_format == IMPORT_FORMAT_AUTOCONSUMO:
+            key = (
+                row["cau"],
+                row["fechaInicioReparto"],
+                row["cups"],
+                row["horaCoeficienteVariableReparto"],
+            )
         else:
             key = (
                 row["cups"],
@@ -131,6 +143,14 @@ def normalize_row(import_format, row):
     if import_format == IMPORT_FORMAT_CONSUMPTION:
         if not normalized.get("fechaInicioMesConsumo") or not normalized.get("fechaFinMesConsumo"):
             raise ValueError("missing consumption period")
+    if import_format == IMPORT_FORMAT_AUTOCONSUMO:
+        if not normalized.get("cau"):
+            raise ValueError("missing cau value")
+        if not normalized.get("fechaInicioReparto"):
+            raise ValueError("missing fechaInicioReparto value")
+        normalized["horaCoeficienteVariableReparto"] = (
+            normalized.get("horaCoeficienteVariableReparto") or ""
+        )
     normalized["uploaded_at"] = utcnow()
     return normalized
 
@@ -212,11 +232,69 @@ def upsert_consumption_chunk(db: Session, rows):
     return created, updated
 
 
+def upsert_autoconsumo_chunk(db: Session, rows):
+    if not rows:
+        return 0, 0
+
+    deduplicated_rows = deduplicate_rows(IMPORT_FORMAT_AUTOCONSUMO, rows)
+    keys = [
+        (
+            row["cau"],
+            row["fechaInicioReparto"],
+            row["cups"],
+            row["horaCoeficienteVariableReparto"],
+        )
+        for row in deduplicated_rows
+    ]
+    existing_keys = set(
+        db.query(
+            RecordAutoconsumo.cau,
+            RecordAutoconsumo.fechaInicioReparto,
+            RecordAutoconsumo.cups,
+            RecordAutoconsumo.horaCoeficienteVariableReparto,
+        )
+        .filter(
+            tuple_(
+                RecordAutoconsumo.cau,
+                RecordAutoconsumo.fechaInicioReparto,
+                RecordAutoconsumo.cups,
+                RecordAutoconsumo.horaCoeficienteVariableReparto,
+            ).in_(keys)
+        )
+        .all()
+    )
+    created = len(deduplicated_rows) - len(existing_keys)
+    updated = len(existing_keys)
+
+    insert_stmt = insert(RecordAutoconsumo).values(deduplicated_rows)
+    update_columns = {
+        header: insert_stmt.excluded[header]
+        for header in get_headers_for_format(IMPORT_FORMAT_AUTOCONSUMO)
+        if header not in ("cau", "fechaInicioReparto", "cups", "horaCoeficienteVariableReparto")
+    }
+    update_columns["uploaded_at"] = insert_stmt.excluded.uploaded_at
+    db.execute(
+        insert_stmt.on_conflict_do_update(
+            index_elements=[
+                RecordAutoconsumo.cau,
+                RecordAutoconsumo.fechaInicioReparto,
+                RecordAutoconsumo.cups,
+                RecordAutoconsumo.horaCoeficienteVariableReparto,
+            ],
+            set_=update_columns,
+        )
+    )
+    db.commit()
+    return created, updated
+
+
 def upsert_chunk(db: Session, import_format, rows):
     if import_format == IMPORT_FORMAT_PS:
         return upsert_ps_chunk(db, rows)
     if import_format == IMPORT_FORMAT_CONSUMPTION:
         return upsert_consumption_chunk(db, rows)
+    if import_format == IMPORT_FORMAT_AUTOCONSUMO:
+        return upsert_autoconsumo_chunk(db, rows)
     raise ValueError("Unsupported import format.")
 
 

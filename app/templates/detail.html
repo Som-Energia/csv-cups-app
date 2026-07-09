@@ -32,6 +32,9 @@
                 {% if has_consumption_data %}
                 <a class="button-link button-link-light" href="/records/{{ record.cups }}/consumptions.csv">Descarregar consums</a>
                 {% endif %}
+                {% if has_autoconsumo_data %}
+                <a class="button-link button-link-light" href="/records/{{ record.cups }}/autoconsumos.csv">Download autoconsumo CSV</a>
+                {% endif %}
             </div>
             {% endif %}
         </section>
@@ -41,6 +44,7 @@
                 <a href="/records/{{ record.cups }}?tab=ps" class="tab-link {% if active_tab == 'ps' %}active{% endif %} {% if not has_ps_data %}disabled{% endif %}" data-tab-target="ps" aria-selected="{% if active_tab == 'ps' %}true{% else %}false{% endif %}">Fitxa del Punt</a>
                 <a href="/records/{{ record.cups }}?tab=consumptions" class="tab-link {% if active_tab == 'consumptions' %}active{% endif %} {% if not has_consumption_data %}disabled{% endif %}" data-tab-target="consumptions" aria-selected="{% if active_tab == 'consumptions' %}true{% else %}false{% endif %}">Històric mensual</a>
                 <a href="/records/{{ record.cups }}?tab=annual" class="tab-link {% if active_tab == 'annual' %}active{% endif %} {% if not has_consumption_data %}disabled{% endif %}" data-tab-target="annual" aria-selected="{% if active_tab == 'annual' %}true{% else %}false{% endif %}">Consums anuals</a>
+                <a href="/records/{{ record.cups }}?tab=autoconsumo" class="tab-link {% if active_tab == 'autoconsumo' %}active{% endif %} {% if not has_autoconsumo_data %}disabled{% endif %}" data-tab-target="autoconsumo" aria-selected="{% if active_tab == 'autoconsumo' %}true{% else %}false{% endif %}">Autoconsumo</a>
             </div>
         </section>
 
@@ -121,6 +125,56 @@
             <section class="panel empty-state">
                 <h3>No hi ha consums per aquest CUPS</h3>
                 <p class="muted">Encara no s'ha importat cap fitxer de consums per aquest punt.</p>
+            </section>
+            {% endif %}
+        </section>
+
+        <section data-record-tab-panel="autoconsumo" {% if active_tab != "autoconsumo" %}hidden{% endif %}>
+            {% if has_autoconsumo_data %}
+            <section class="panel">
+                <h2>Autoconsumo rows</h2>
+                <div class="consumption-summary-grid">
+                    {% for item in autoconsumo_summary %}
+                    <div class="summary-item consumption-summary-item">
+                        <strong>{{ item.label }}</strong>
+                        <span>{{ item.value }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="table-wrap">
+                    <table class="records-table">
+                        <thead>
+                            <tr>
+                                <th>CAU</th>
+                                <th>Reparto start</th>
+                                <th>Variable hour</th>
+                                <th>Coefficient</th>
+                                <th>Updated</th>
+                                <th>Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in autoconsumo_rows %}
+                            <tr>
+                                <td>{{ row.cau }}</td>
+                                <td>{{ row.fechaInicioReparto }}</td>
+                                <td>{{ row.horaCoeficienteVariableReparto }}</td>
+                                <td>{{ row.coeficienteReparto }}</td>
+                                <td>{{ row.uploaded_at }}</td>
+                                <td><a href="/autoconsumos/{{ row.id }}">Open row</a></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            {% else %}
+            <section class="panel empty-state">
+                <h3>No autoconsumo rows for this CUPS</h3>
+                <p class="muted">Import an autoconsumo CSV with the same CUPS value to see linked rows here.</p>
             </section>
             {% endif %}
         </section>
