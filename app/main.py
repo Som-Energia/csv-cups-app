@@ -109,6 +109,39 @@ def utcnow():
     return datetime.utcnow()
 
 
+def build_cups_lookup_candidates(cups: str) -> list[str]:
+    normalized_cups = cups.strip()
+    if not normalized_cups:
+        return []
+
+    alternate_cups = (
+        normalized_cups[:-2] if normalized_cups.upper().endswith("0F") else f"{normalized_cups}0F"
+    )
+    candidates = [normalized_cups]
+    if alternate_cups and alternate_cups not in candidates:
+        candidates.append(alternate_cups)
+    return candidates
+
+
+def get_record_by_exact_cups(db: Session, cups: str) -> Record | None:
+    return db.query(Record).filter(Record.cups == cups).first()
+
+
+def resolve_existing_cups(db: Session, cups: str) -> str:
+    normalized_cups = cups.strip()
+    for candidate in build_cups_lookup_candidates(normalized_cups):
+        has_record = db.query(Record.id).filter(Record.cups == candidate).limit(1).first() is not None
+        has_consumptions_for_candidate = (
+            db.query(RecordConsumption.id).filter(RecordConsumption.cups == candidate).limit(1).first() is not None
+        )
+        has_autoconsumos_for_candidate = (
+            db.query(RecordAutoconsumo.id).filter(RecordAutoconsumo.cups == candidate).limit(1).first() is not None
+        )
+        if has_record or has_consumptions_for_candidate or has_autoconsumos_for_candidate:
+            return candidate
+    return normalized_cups
+
+
 def is_job_stalled(job: ImportJob, now: datetime | None = None) -> bool:
     if job.status != "processing":
         return False
@@ -651,13 +684,17 @@ def serialize_csv_row(source, headers: list[str]) -> dict[str, str]:
 
 
 def build_search_results(db: Session, normalized_cups: str):
-    records = (
-        db.query(Record)
-        .filter(Record.cups.ilike(f"%{normalized_cups}%"))
-        .order_by(Record.uploaded_at.desc())
-        .limit(100)
-        .all()
-    )
+    records = []
+    for candidate in build_cups_lookup_candidates(normalized_cups):
+        records = (
+            db.query(Record)
+            .filter(Record.cups.ilike(f"%{candidate}%"))
+            .order_by(Record.uploaded_at.desc())
+            .limit(100)
+            .all()
+        )
+        if records:
+            break
     return [
         {
             "cups": record.cups,
@@ -716,9 +753,10 @@ def imports_page(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/records/{cups}", response_class=HTMLResponse)
 def record_detail(request: Request, cups: str, db: Session = Depends(get_db)):
-    record = db.query(Record).filter(Record.cups == cups).first()
-    has_consumption_data = has_consumptions(db, cups)
-    has_autoconsumo_data = has_autoconsumos(db, cups)
+    resolved_cups = resolve_existing_cups(db, cups)
+    record = get_record_by_exact_cups(db, resolved_cups)
+    has_consumption_data = has_consumptions(db, resolved_cups)
+    has_autoconsumo_data = has_autoconsumos(db, resolved_cups)
     if record is None and not has_consumption_data and not has_autoconsumo_data:
         raise HTTPException(status_code=404, detail="Record not found")
     active_tab = request.query_params.get("tab", "ps")
@@ -729,19 +767,19 @@ def record_detail(request: Request, cups: str, db: Session = Depends(get_db)):
             active_tab = "consumptions"
         elif has_autoconsumo_data:
             active_tab = "autoconsumo"
-    subject = record if record is not None else SimpleNamespace(cups=cups)
+    subject = record if record is not None else SimpleNamespace(cups=resolved_cups)
     should_defer_consumptions = has_consumption_data and active_tab != "consumptions"
     should_defer_annual_consumptions = has_consumption_data and active_tab != "annual"
     consumptions = []
     autoconsumos = []
     annual_consumption_summary = None
     if has_consumption_data and not should_defer_consumptions:
-        consumptions = get_consumptions_for_cups(db, cups)
+        consumptions = get_consumptions_for_cups(db, resolved_cups)
     if has_consumption_data and not should_defer_annual_consumptions:
-        annual_source = consumptions if consumptions else get_consumptions_for_cups(db, cups)
+        annual_source = consumptions if consumptions else get_consumptions_for_cups(db, resolved_cups)
         annual_consumption_summary = build_annual_consumption_summary(annual_source)
     if has_autoconsumo_data and active_tab == "autoconsumo":
-        autoconsumos = get_autoconsumos_for_cups(db, cups)
+        autoconsumos = get_autoconsumos_for_cups(db, resolved_cups)
     return templates.TemplateResponse(
         "detail.html",
         {
@@ -750,7 +788,7 @@ def record_detail(request: Request, cups: str, db: Session = Depends(get_db)):
             "record_groups": build_record_groups(record),
             "record_summary": build_record_summary(
                 record,
-                cups,
+                resolved_cups,
                 has_consumption_data,
                 has_autoconsumo_data,
             ),
@@ -771,9 +809,10 @@ def record_detail(request: Request, cups: str, db: Session = Depends(get_db)):
 
 @app.get("/records/{cups}/consumptions/partial", response_class=HTMLResponse)
 def record_consumptions_partial(request: Request, cups: str, db: Session = Depends(get_db)):
-    consumptions = get_consumptions_for_cups(db, cups)
+    resolved_cups = resolve_existing_cups(db, cups)
+    consumptions = get_consumptions_for_cups(db, resolved_cups)
     if not consumptions:
-        record_exists = db.query(Record.id).filter(Record.cups == cups).limit(1).first() is not None
+        record_exists = db.query(Record.id).filter(Record.cups == resolved_cups).limit(1).first() is not None
         if not record_exists:
             raise HTTPException(status_code=404, detail="Record not found")
     return templates.TemplateResponse(
@@ -789,9 +828,10 @@ def record_consumptions_partial(request: Request, cups: str, db: Session = Depen
 
 @app.get("/records/{cups}/annual-consumptions/partial", response_class=HTMLResponse)
 def record_annual_consumptions_partial(request: Request, cups: str, db: Session = Depends(get_db)):
-    consumptions = get_consumptions_for_cups(db, cups)
+    resolved_cups = resolve_existing_cups(db, cups)
+    consumptions = get_consumptions_for_cups(db, resolved_cups)
     if not consumptions:
-        record_exists = db.query(Record.id).filter(Record.cups == cups).limit(1).first() is not None
+        record_exists = db.query(Record.id).filter(Record.cups == resolved_cups).limit(1).first() is not None
         if not record_exists:
             raise HTTPException(status_code=404, detail="Record not found")
     return templates.TemplateResponse(
@@ -806,43 +846,46 @@ def record_annual_consumptions_partial(request: Request, cups: str, db: Session 
 
 @app.get("/records/{cups}/ps.csv")
 def download_record_ps_csv(cups: str, db: Session = Depends(get_db)):
-    record = db.query(Record).filter(Record.cups == cups).first()
+    resolved_cups = resolve_existing_cups(db, cups)
+    record = get_record_by_exact_cups(db, resolved_cups)
     if record is None:
         raise HTTPException(status_code=404, detail="Record not found")
     return build_csv_response(
         rows=[serialize_csv_row(record, PS_CSV_HEADERS)],
         headers=PS_CSV_HEADERS,
-        filename=f"{cups}_ps.csv",
+        filename=f"{resolved_cups}_ps.csv",
     )
 
 
 @app.get("/records/{cups}/consumptions.csv")
 def download_record_consumptions_csv(cups: str, db: Session = Depends(get_db)):
-    consumptions = get_consumptions_for_cups(db, cups)
+    resolved_cups = resolve_existing_cups(db, cups)
+    consumptions = get_consumptions_for_cups(db, resolved_cups)
     if not consumptions:
-        record_exists = db.query(Record.id).filter(Record.cups == cups).limit(1).first() is not None
+        record_exists = db.query(Record.id).filter(Record.cups == resolved_cups).limit(1).first() is not None
         if not record_exists:
             raise HTTPException(status_code=404, detail="Record not found")
         raise HTTPException(status_code=404, detail="Consumptions not found")
     return build_csv_response(
         rows=[serialize_csv_row(consumption, CONSUMPTION_CSV_HEADERS) for consumption in consumptions],
         headers=CONSUMPTION_CSV_HEADERS,
-        filename=f"{cups}_consumptions.csv",
+        filename=f"{resolved_cups}_consumptions.csv",
     )
 
 
 @app.get("/records/{cups}/autoconsumos.csv")
 def download_record_autoconsumos_csv(cups: str, db: Session = Depends(get_db)):
-    autoconsumos = get_autoconsumos_for_cups(db, cups)
+    resolved_cups = resolve_existing_cups(db, cups)
+    autoconsumos = get_autoconsumos_for_cups(db, resolved_cups)
     if not autoconsumos:
-        record_exists = db.query(Record.id).filter(Record.cups == cups).limit(1).first() is not None
+        record_exists = db.query(Record.id).filter(Record.cups == resolved_cups).limit(1).first() is not None
         if not record_exists:
             raise HTTPException(status_code=404, detail="Record not found")
         raise HTTPException(status_code=404, detail="Autoconsumo rows not found")
     return build_csv_response(
         rows=[serialize_csv_row(autoconsumo, AUTOCONSUMO_CSV_HEADERS) for autoconsumo in autoconsumos],
         headers=AUTOCONSUMO_CSV_HEADERS,
-        filename=f"{cups}_autoconsumos.csv",
+        filename=f"{resolved_cups}_autoconsumos.csv",
     )
 
 
@@ -851,7 +894,7 @@ def autoconsumo_detail(request: Request, autoconsumo_id: int, db: Session = Depe
     autoconsumo = db.query(RecordAutoconsumo).filter(RecordAutoconsumo.id == autoconsumo_id).first()
     if autoconsumo is None:
         raise HTTPException(status_code=404, detail="Autoconsumo row not found")
-    linked_record = db.query(Record).filter(Record.cups == autoconsumo.cups).first()
+    linked_record = get_record_by_exact_cups(db, resolve_existing_cups(db, autoconsumo.cups))
     return templates.TemplateResponse(
         "autoconsumo_detail.html",
         {
@@ -1076,15 +1119,27 @@ def list_records(
     db: Session = Depends(get_db),
 ):
     query = db.query(Record)
-    if cups:
-        normalized_cups = cups.strip()
-        query = query.filter(Record.cups.ilike(f"%{normalized_cups}%"))
-    return query.order_by(Record.uploaded_at.desc()).limit(limit).all()
+    if not cups:
+        return query.order_by(Record.uploaded_at.desc()).limit(limit).all()
+
+    records = []
+    normalized_cups = cups.strip()
+    for candidate in build_cups_lookup_candidates(normalized_cups):
+        records = (
+            db.query(Record)
+            .filter(Record.cups.ilike(f"%{candidate}%"))
+            .order_by(Record.uploaded_at.desc())
+            .limit(limit)
+            .all()
+        )
+        if records:
+            break
+    return records
 
 
 @app.get("/api/records/{cups}", response_model=RecordOut)
 def get_record(cups: str, db: Session = Depends(get_db)):
-    record = db.query(Record).filter(Record.cups == cups).first()
+    record = get_record_by_exact_cups(db, resolve_existing_cups(db, cups))
     if record is None:
         raise HTTPException(status_code=404, detail="Record not found")
     return record
@@ -1092,7 +1147,7 @@ def get_record(cups: str, db: Session = Depends(get_db)):
 
 @app.get("/api/records/{cups}/bono-social", response_model=RecordBonoSocialOut)
 def get_record_bono_social(cups: str, db: Session = Depends(get_db)):
-    record = db.query(Record).filter(Record.cups == cups).first()
+    record = get_record_by_exact_cups(db, resolve_existing_cups(db, cups))
     if record is None:
         raise HTTPException(status_code=404, detail="Record not found")
     return {
@@ -1103,9 +1158,10 @@ def get_record_bono_social(cups: str, db: Session = Depends(get_db)):
 
 @app.get("/api/records/{cups}/consumptions", response_model=list[RecordConsumptionOut])
 def get_record_consumptions(cups: str, db: Session = Depends(get_db)):
+    resolved_cups = resolve_existing_cups(db, cups)
     return (
         db.query(RecordConsumption)
-        .filter(RecordConsumption.cups == cups)
+        .filter(RecordConsumption.cups == resolved_cups)
         .order_by(
             RecordConsumption.fechaInicioMesConsumo.desc(),
             RecordConsumption.fechaFinMesConsumo.desc(),
