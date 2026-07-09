@@ -238,7 +238,17 @@ class RecordAutoconsumo(Base):
     id = Column(Integer, primary_key=True, index=True)
     uploaded_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     cau = Column(String, nullable=False, index=True)
-    fechaInicioReparto = Column(String, nullable=False, index=True)
+    fechaInicioReparto = Column(
+        "fechainicioreparto", String, key="fechaInicioReparto", nullable=False, index=True
+    )
     cups = Column(String, nullable=False, index=True)
-    horaCoeficienteVariableReparto = Column(String, nullable=False, default="")
-    coeficienteReparto = Column(String, nullable=True)
+    horaCoeficienteVariableReparto = Column(
+        "horacoeficientevariablereparto",
+        String,
+        key="horaCoeficienteVariableReparto",
+        nullable=False,
+        default="",
+    )
+    coeficienteReparto = Column(
+        "coeficientereparto", String, key="coeficienteReparto", nullable=True
+    )
