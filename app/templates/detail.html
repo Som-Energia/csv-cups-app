@@ -131,46 +131,16 @@
 
         <section data-record-tab-panel="autoconsumo" {% if active_tab != "autoconsumo" %}hidden{% endif %}>
             {% if has_autoconsumo_data %}
-            <section class="panel">
-                <h2>Autoconsumo rows</h2>
-                <div class="consumption-summary-grid">
-                    {% for item in autoconsumo_summary %}
-                    <div class="summary-item consumption-summary-item">
-                        <strong>{{ item.label }}</strong>
-                        <span>{{ item.value }}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-            </section>
-
-            <section class="panel">
-                <div class="table-wrap">
-                    <table class="records-table">
-                        <thead>
-                            <tr>
-                                <th>CAU</th>
-                                <th>Reparto start</th>
-                                <th>Variable hour</th>
-                                <th>Coefficient</th>
-                                <th>Updated</th>
-                                <th>Detail</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in autoconsumo_rows %}
-                            <tr>
-                                <td>{{ row.cau }}</td>
-                                <td>{{ row.fechaInicioReparto }}</td>
-                                <td>{{ row.horaCoeficienteVariableReparto }}</td>
-                                <td>{{ row.coeficienteReparto }}</td>
-                                <td>{{ row.uploaded_at }}</td>
-                                <td><a href="/autoconsumos/{{ row.id }}">Open row</a></td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+            {% if should_defer_autoconsumos %}
+            <div data-deferred-panel data-partial-url="/records/{{ record.cups }}/autoconsumos/partial" aria-busy="true">
+                <section class="panel empty-state">
+                    <h3>Loading autoconsumo rows...</h3>
+                    <p class="muted">We will load the linked autoconsumo rows when you open this tab.</p>
+                </section>
+            </div>
+            {% else %}
+            {% include "record_autoconsumos_partial.html" %}
+            {% endif %}
             {% else %}
             <section class="panel empty-state">
                 <h3>No autoconsumo rows for this CUPS</h3>

@@ -770,6 +770,7 @@ def record_detail(request: Request, cups: str, db: Session = Depends(get_db)):
     subject = record if record is not None else SimpleNamespace(cups=resolved_cups)
     should_defer_consumptions = has_consumption_data and active_tab != "consumptions"
     should_defer_annual_consumptions = has_consumption_data and active_tab != "annual"
+    should_defer_autoconsumos = has_autoconsumo_data and active_tab != "autoconsumo"
     consumptions = []
     autoconsumos = []
     annual_consumption_summary = None
@@ -778,7 +779,7 @@ def record_detail(request: Request, cups: str, db: Session = Depends(get_db)):
     if has_consumption_data and not should_defer_annual_consumptions:
         annual_source = consumptions if consumptions else get_consumptions_for_cups(db, resolved_cups)
         annual_consumption_summary = build_annual_consumption_summary(annual_source)
-    if has_autoconsumo_data and active_tab == "autoconsumo":
+    if has_autoconsumo_data and not should_defer_autoconsumos:
         autoconsumos = get_autoconsumos_for_cups(db, resolved_cups)
     return templates.TemplateResponse(
         "detail.html",
@@ -798,6 +799,7 @@ def record_detail(request: Request, cups: str, db: Session = Depends(get_db)):
             "has_autoconsumo_data": has_autoconsumo_data,
             "should_defer_consumptions": should_defer_consumptions,
             "should_defer_annual_consumptions": should_defer_annual_consumptions,
+            "should_defer_autoconsumos": should_defer_autoconsumos,
             "consumption_history": build_consumption_history(consumptions),
             "consumption_summary": build_consumption_summary(consumptions),
             "annual_consumption_summary": annual_consumption_summary,
@@ -840,6 +842,26 @@ def record_annual_consumptions_partial(request: Request, cups: str, db: Session 
             "request": request,
             "has_consumption_data": bool(consumptions),
             "annual_consumption_summary": build_annual_consumption_summary(consumptions),
+        },
+    )
+
+
+@app.get("/records/{cups}/autoconsumos/partial", response_class=HTMLResponse)
+def record_autoconsumos_partial(request: Request, cups: str, db: Session = Depends(get_db)):
+    resolved_cups = resolve_existing_cups(db, cups)
+    autoconsumos = get_autoconsumos_for_cups(db, resolved_cups)
+    if not autoconsumos:
+        record_exists = db.query(Record.id).filter(Record.cups == resolved_cups).limit(1).first() is not None
+        consumption_exists = has_consumptions(db, resolved_cups)
+        if not record_exists and not consumption_exists:
+            raise HTTPException(status_code=404, detail="Record not found")
+    return templates.TemplateResponse(
+        "record_autoconsumos_partial.html",
+        {
+            "request": request,
+            "has_autoconsumo_data": bool(autoconsumos),
+            "autoconsumo_rows": build_autoconsumo_rows(autoconsumos),
+            "autoconsumo_summary": build_autoconsumo_summary(autoconsumos),
         },
     )
 
