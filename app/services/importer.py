@@ -54,12 +54,25 @@ class JobSupersededError(RuntimeError):
 def normalize_value(value):
     if value is None:
         return None
-    value = value.strip()
+    value = value.replace("\x00", "").strip()
     return value or None
 
 
+def sanitize_headers(headers):
+    return [(header or "").replace("\x00", "").strip() for header in headers]
+
+
+def sanitize_row(row):
+    sanitized = {}
+    for key, value in row.items():
+        sanitized_key = (key or "").replace("\x00", "").strip()
+        sanitized_value = value.replace("\x00", "") if value is not None else None
+        sanitized[sanitized_key] = sanitized_value
+    return sanitized
+
+
 def detect_csv_format(headers):
-    normalized_headers = [header.strip() for header in headers]
+    normalized_headers = sanitize_headers(headers)
     for import_format, expected_headers in IMPORT_FORMAT_HEADERS.items():
         if normalized_headers == expected_headers:
             return import_format
@@ -408,7 +421,7 @@ def inspect_zip_import_source(path: Path):
             with archive.open(member) as raw_member:
                 text_wrapper = io.TextIOWrapper(raw_member, encoding="utf-8-sig", newline="")
                 reader = csv.DictReader(text_wrapper)
-                headers = reader.fieldnames or []
+                headers = sanitize_headers(reader.fieldnames or [])
                 try:
                     import_format = validate_headers(headers)
                 except ValueError:
@@ -438,7 +451,7 @@ def inspect_import_source(stored_path):
     with path.open("rb") as raw_file:
         text_wrapper = io.TextIOWrapper(raw_file, encoding="utf-8-sig", newline="")
         reader = csv.DictReader(text_wrapper)
-        headers = reader.fieldnames or []
+        headers = sanitize_headers(reader.fieldnames or [])
         import_format = validate_headers(headers)
     return {
         "path": path,
@@ -483,7 +496,7 @@ def split_csv_into_chunks(db: Session, job: ImportJob, started_at, attempt_token
 
     with open_import_source(source) as (raw_file, text_wrapper):
         reader = csv.DictReader(text_wrapper)
-        validate_headers(reader.fieldnames or [], import_format=import_format)
+        validate_headers(sanitize_headers(reader.fieldnames or []), import_format=import_format)
 
         def flush_current_chunk():
             if current_file is None or current_rows == 0:
@@ -492,6 +505,7 @@ def split_csv_into_chunks(db: Session, job: ImportJob, started_at, attempt_token
             return build_chunk_record(job.id, chunk_index - 1, current_path, current_rows)
 
         for row in reader:
+            sanitized_row = sanitize_row(row)
             rows_since_last_check += 1
             if rows_since_last_check >= 1000:
                 ensure_job_attempt_active(db, job.id, started_at, attempt_token=attempt_token)
@@ -505,7 +519,7 @@ def split_csv_into_chunks(db: Session, job: ImportJob, started_at, attempt_token
                 current_rows = 0
                 chunk_index += 1
 
-            current_writer.writerow({header: row.get(header) for header in headers})
+            current_writer.writerow({header: sanitized_row.get(header) for header in headers})
             current_rows += 1
             update_split_progress(
                 db,
@@ -787,12 +801,12 @@ def process_import_job_chunk(chunk_id):
         with open(chunk.stored_path, "rb") as raw_file:
             text_wrapper = io.TextIOWrapper(raw_file, encoding="utf-8-sig", newline="")
             reader = csv.DictReader(text_wrapper)
-            import_format = validate_headers(reader.fieldnames or [])
+            import_format = validate_headers(sanitize_headers(reader.fieldnames or []))
 
             for index, row in enumerate(reader, start=2):
                 processed_rows += 1
                 try:
-                    normalized = normalize_row(import_format, row)
+                    normalized = normalize_row(import_format, sanitize_row(row))
                 except ValueError as exc:
                     error_rows += 1
                     if error_rows <= 100:
