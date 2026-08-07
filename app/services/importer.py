@@ -18,6 +18,7 @@ from app.constants import (
     IMPORT_FORMAT_HEADERS,
     IMPORT_FORMAT_PS,
 )
+from app.cups import canonicalize_import_cups
 from app.database import SessionLocal
 from app.jobs import enqueue_import_chunk
 from app.models import ImportJob, ImportJobChunk, Record, RecordAutoconsumo, RecordConsumption
@@ -153,6 +154,7 @@ def normalize_row(import_format, row):
     cups = normalized.get("cups")
     if not cups:
         raise ValueError("missing cups value")
+    normalized["cups"] = canonicalize_import_cups(cups)
     if import_format == IMPORT_FORMAT_CONSUMPTION:
         if not normalized.get("fechaInicioMesConsumo") or not normalized.get("fechaFinMesConsumo"):
             raise ValueError("missing consumption period")

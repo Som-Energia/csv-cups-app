@@ -20,6 +20,7 @@ from app.constants import (
     FIELD_LABELS_CA,
     PS_CSV_HEADERS,
 )
+from app.cups import canonicalize_api_cups, canonicalize_lookup_cups
 from app.database import get_db, init_db
 from app.jobs import enqueue_import
 from app.models import ImportJob, ImportJobChunk, Record, RecordAutoconsumo, RecordConsumption
@@ -110,17 +111,10 @@ def utcnow():
 
 
 def build_cups_lookup_candidates(cups: str) -> list[str]:
-    normalized_cups = cups.strip()
+    normalized_cups = canonicalize_lookup_cups(cups)
     if not normalized_cups:
         return []
-
-    alternate_cups = (
-        normalized_cups[:-2] if normalized_cups.upper().endswith("0F") else f"{normalized_cups}0F"
-    )
-    candidates = [normalized_cups]
-    if alternate_cups and alternate_cups not in candidates:
-        candidates.append(alternate_cups)
-    return candidates
+    return [normalized_cups]
 
 
 def get_record_by_exact_cups(db: Session, cups: str) -> Record | None:
@@ -128,18 +122,14 @@ def get_record_by_exact_cups(db: Session, cups: str) -> Record | None:
 
 
 def resolve_existing_cups(db: Session, cups: str) -> str:
-    normalized_cups = cups.strip()
-    for candidate in build_cups_lookup_candidates(normalized_cups):
-        has_record = db.query(Record.id).filter(Record.cups == candidate).limit(1).first() is not None
-        has_consumptions_for_candidate = (
-            db.query(RecordConsumption.id).filter(RecordConsumption.cups == candidate).limit(1).first() is not None
-        )
-        has_autoconsumos_for_candidate = (
-            db.query(RecordAutoconsumo.id).filter(RecordAutoconsumo.cups == candidate).limit(1).first() is not None
-        )
-        if has_record or has_consumptions_for_candidate or has_autoconsumos_for_candidate:
-            return candidate
-    return normalized_cups
+    return canonicalize_lookup_cups(cups)
+
+
+def get_api_canonical_cups(cups: str) -> str:
+    try:
+        return canonicalize_api_cups(cups)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def is_job_stalled(job: ImportJob, now: datetime | None = None) -> bool:
@@ -205,6 +195,33 @@ def format_display_value(value, field_name: str | None = None):
     return value
 
 
+RECORD_FIELD_FALLBACKS = {
+    "desMunicipioPS": "legacy_municipioPS",
+    "codigoComercializadorVigente": "legacy_codigoComercializadora",
+    "codigoLecturaRemota": "legacy_codigoTelegestion",
+    "acogimientoAutoconsumo": "legacy_codigoAutoconsumo",
+    "cnae": "legacy_CNAE",
+}
+
+
+def get_record_field_value(source, field_name: str):
+    value = getattr(source, field_name, None)
+    if value not in (None, ""):
+        return value
+    fallback_field_name = RECORD_FIELD_FALLBACKS.get(field_name)
+    if fallback_field_name is None:
+        return value
+    fallback_value = getattr(source, fallback_field_name, None)
+    return fallback_value if fallback_value not in (None, "") else value
+
+
+def serialize_record(record: Record) -> dict:
+    payload = {}
+    for field_name in RecordOut.model_fields:
+        payload[field_name] = get_record_field_value(record, field_name)
+    return payload
+
+
 def format_datetime_minute(value: datetime | None) -> str:
     if value is None:
         return "-"
@@ -261,7 +278,7 @@ def build_record_groups(record: Record):
                 {
                     "name": field_name,
                     "label": get_field_label(field_name),
-                    "value": format_display_value(getattr(record, field_name, None), field_name),
+                    "value": format_display_value(get_record_field_value(record, field_name), field_name),
                 }
             )
         grouped_fields.append({"name": group_name, "fields": fields})
@@ -284,7 +301,9 @@ def build_field_items(source, field_names: list[str]):
             {
                 "name": field_name,
                 "label": get_field_label(field_name),
-                "value": format_display_value(getattr(source, field_name, None), field_name),
+                "value": format_display_value(get_record_field_value(source, field_name), field_name)
+                if isinstance(source, Record)
+                else format_display_value(getattr(source, field_name, None), field_name),
             }
         )
     return items
@@ -330,8 +349,11 @@ def build_record_summary(
                 },
                 {
                     "label": "Municipi",
-                    "value": format_display_value(record.municipioPS, "municipioPS"),
-                    "field_name": "municipioPS",
+                    "value": format_display_value(
+                        get_record_field_value(record, "desMunicipioPS"),
+                        "desMunicipioPS",
+                    ),
+                    "field_name": "desMunicipioPS",
                 },
                 {
                     "label": "Tarifa ATR",
@@ -685,6 +707,8 @@ def build_csv_response(rows: list[dict[str, str]], headers: list[str], filename:
 
 
 def serialize_csv_row(source, headers: list[str]) -> dict[str, str]:
+    if isinstance(source, Record):
+        return {header: get_record_field_value(source, header) or "" for header in headers}
     return {header: getattr(source, header, "") or "" for header in headers}
 
 
@@ -706,7 +730,7 @@ def build_search_results(db: Session, normalized_cups: str):
             "codigoEmpresaDistribuidora": record.codigoEmpresaDistribuidora,
             "nombreEmpresaDistribuidora": record.nombreEmpresaDistribuidora,
             "codigoPostalPS": record.codigoPostalPS,
-            "municipioPS": record.municipioPS,
+            "desMunicipioPS": get_record_field_value(record, "desMunicipioPS"),
             "tarifa": format_display_value(record.codigoTarifaATREnVigor, "codigoTarifaATREnVigor"),
             "uploaded_at": record.uploaded_at,
         }
@@ -1146,35 +1170,31 @@ def list_records(
     db: Session = Depends(get_db),
 ):
     query = db.query(Record)
-    if not cups:
-        return query.order_by(Record.uploaded_at.desc()).limit(limit).all()
+    if cups is None:
+        return [serialize_record(record) for record in query.order_by(Record.uploaded_at.desc()).limit(limit).all()]
 
-    records = []
-    normalized_cups = cups.strip()
-    for candidate in build_cups_lookup_candidates(normalized_cups):
-        records = (
-            db.query(Record)
-            .filter(Record.cups.ilike(f"%{candidate}%"))
-            .order_by(Record.uploaded_at.desc())
-            .limit(limit)
-            .all()
-        )
-        if records:
-            break
-    return records
+    canonical_cups = get_api_canonical_cups(cups)
+    records = (
+        db.query(Record)
+        .filter(Record.cups == canonical_cups)
+        .order_by(Record.uploaded_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [serialize_record(record) for record in records]
 
 
 @app.get("/api/records/{cups}", response_model=RecordOut)
 def get_record(cups: str, db: Session = Depends(get_db)):
-    record = get_record_by_exact_cups(db, resolve_existing_cups(db, cups))
+    record = get_record_by_exact_cups(db, get_api_canonical_cups(cups))
     if record is None:
         raise HTTPException(status_code=404, detail="Record not found")
-    return record
+    return serialize_record(record)
 
 
 @app.get("/api/records/{cups}/bono-social", response_model=RecordBonoSocialOut)
 def get_record_bono_social(cups: str, db: Session = Depends(get_db)):
-    record = get_record_by_exact_cups(db, resolve_existing_cups(db, cups))
+    record = get_record_by_exact_cups(db, get_api_canonical_cups(cups))
     if record is None:
         raise HTTPException(status_code=404, detail="Record not found")
     return {
@@ -1185,7 +1205,7 @@ def get_record_bono_social(cups: str, db: Session = Depends(get_db)):
 
 @app.get("/api/records/{cups}/consumptions", response_model=list[RecordConsumptionOut])
 def get_record_consumptions(cups: str, db: Session = Depends(get_db)):
-    resolved_cups = resolve_existing_cups(db, cups)
+    resolved_cups = get_api_canonical_cups(cups)
     return (
         db.query(RecordConsumption)
         .filter(RecordConsumption.cups == resolved_cups)

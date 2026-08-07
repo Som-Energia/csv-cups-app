@@ -5,7 +5,7 @@ from pathlib import Path
 class Settings:
     def __init__(self):
         self.base_dir = Path(__file__).resolve().parent.parent
-        self.app_version = os.getenv("APP_VERSION", "0.9")
+        self.app_version = os.getenv("APP_VERSION", "0.11.1")
         self.upload_dir = Path(os.getenv("UPLOAD_DIR", self.base_dir / "storage" / "uploads"))
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.database_url = os.getenv(
