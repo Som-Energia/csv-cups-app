@@ -1,9 +1,12 @@
+import csv
+import io
 import unittest
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 
 from app.constants import (
+    CONSUMPTION_CSV_HEADERS,
     IMPORT_FORMAT_AUTOCONSUMO,
     IMPORT_FORMAT_CONSUMPTION,
     IMPORT_FORMAT_PS,
@@ -16,6 +19,7 @@ from app.main import (
 )
 from app.services.importer import (
     deduplicate_rows,
+    detect_csv_format,
     get_headers_for_format,
     normalize_row,
     upsert_autoconsumo_chunk,
@@ -210,6 +214,66 @@ class CupsCanonicalizationTests(unittest.TestCase):
                 endpoint()
             self.assertEqual(raised.exception.status_code, 422)
             self.assertEqual(raised.exception.detail, "CUPS must contain exactly 20 or 22 characters.")
+
+
+class ConsumptionFormatTests(unittest.TestCase):
+    old_reactive_headers = [f"consumoEnergiaReactivaEnVArhP{period}" for period in range(1, 7)]
+    inductive_headers = [
+        f"consumoEnergiaReactivaInductivaEnVArhP{period}" for period in range(1, 7)
+    ]
+    capacitive_headers = [
+        f"consumoEnergiaReactivaCapacitivaEnVArhP{period}" for period in range(1, 7)
+    ]
+
+    def test_new_consumption_headers_are_detected(self):
+        self.assertEqual(detect_csv_format(CONSUMPTION_CSV_HEADERS), IMPORT_FORMAT_CONSUMPTION)
+
+    def test_old_consumption_headers_are_rejected(self):
+        old_headers = [
+            *CONSUMPTION_CSV_HEADERS[:10],
+            *self.old_reactive_headers,
+            *CONSUMPTION_CSV_HEADERS[22:],
+        ]
+
+        with self.assertRaisesRegex(ValueError, "do not match any supported format"):
+            detect_csv_format(old_headers)
+
+    def test_new_reactive_values_are_normalized_and_upserted(self):
+        values = {
+            header: str(index)
+            for index, header in enumerate(self.inductive_headers + self.capacitive_headers, start=1)
+        }
+        row = {header: "value" for header in CONSUMPTION_CSV_HEADERS}
+        row.update(values)
+        row.update(
+            {
+                "cups": "ES0705000100521001PH0F",
+                "fechaInicioMesConsumo": "2024-10-31",
+                "fechaFinMesConsumo": "2024-11-30",
+                "codigoDHEquipoDeMedida": "",
+                "codigoTipoLectura": " ",
+            }
+        )
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=CONSUMPTION_CSV_HEADERS)
+        writer.writeheader()
+        writer.writerow(row)
+        parsed_row = next(csv.DictReader(io.StringIO(buffer.getvalue())))
+
+        normalized = normalize_row(IMPORT_FORMAT_CONSUMPTION, parsed_row)
+        database = FakeUpsertDatabase()
+        insert_recorder = FakeInsertRecorder()
+        with patch("app.services.importer.insert", insert_recorder):
+            upsert_consumption_chunk(database, [normalized])
+
+        payload = insert_recorder.statements[0].rows[0]
+        self.assertEqual(payload["cups"], "ES0705000100521001PH")
+        self.assertEqual(
+            {header: payload[header] for header in values},
+            values,
+        )
+        self.assertIsNone(payload["codigoDHEquipoDeMedida"])
+        self.assertIsNone(payload["codigoTipoLectura"])
 
 
 if __name__ == "__main__":

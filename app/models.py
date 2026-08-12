@@ -215,40 +215,76 @@ class RecordConsumption(Base):
     consumoEnergiaActivaEnWhP6 = Column(
         "consumoenergiaactivaenwhp6", String, key="consumoEnergiaActivaEnWhP6", nullable=True
     )
-    consumoEnergiaReactivaEnVArhP1 = Column(
-        "consumoenergiareactivaenvarhp1",
+    consumoEnergiaReactivaInductivaEnVArhP1 = Column(
+        "consumoenergiareactivainductivaenvarhp1",
         String,
-        key="consumoEnergiaReactivaEnVArhP1",
+        key="consumoEnergiaReactivaInductivaEnVArhP1",
         nullable=True,
     )
-    consumoEnergiaReactivaEnVArhP2 = Column(
-        "consumoenergiareactivaenvarhp2",
+    consumoEnergiaReactivaInductivaEnVArhP2 = Column(
+        "consumoenergiareactivainductivaenvarhp2",
         String,
-        key="consumoEnergiaReactivaEnVArhP2",
+        key="consumoEnergiaReactivaInductivaEnVArhP2",
         nullable=True,
     )
-    consumoEnergiaReactivaEnVArhP3 = Column(
-        "consumoenergiareactivaenvarhp3",
+    consumoEnergiaReactivaInductivaEnVArhP3 = Column(
+        "consumoenergiareactivainductivaenvarhp3",
         String,
-        key="consumoEnergiaReactivaEnVArhP3",
+        key="consumoEnergiaReactivaInductivaEnVArhP3",
         nullable=True,
     )
-    consumoEnergiaReactivaEnVArhP4 = Column(
-        "consumoenergiareactivaenvarhp4",
+    consumoEnergiaReactivaInductivaEnVArhP4 = Column(
+        "consumoenergiareactivainductivaenvarhp4",
         String,
-        key="consumoEnergiaReactivaEnVArhP4",
+        key="consumoEnergiaReactivaInductivaEnVArhP4",
         nullable=True,
     )
-    consumoEnergiaReactivaEnVArhP5 = Column(
-        "consumoenergiareactivaenvarhp5",
+    consumoEnergiaReactivaInductivaEnVArhP5 = Column(
+        "consumoenergiareactivainductivaenvarhp5",
         String,
-        key="consumoEnergiaReactivaEnVArhP5",
+        key="consumoEnergiaReactivaInductivaEnVArhP5",
         nullable=True,
     )
-    consumoEnergiaReactivaEnVArhP6 = Column(
-        "consumoenergiareactivaenvarhp6",
+    consumoEnergiaReactivaInductivaEnVArhP6 = Column(
+        "consumoenergiareactivainductivaenvarhp6",
         String,
-        key="consumoEnergiaReactivaEnVArhP6",
+        key="consumoEnergiaReactivaInductivaEnVArhP6",
+        nullable=True,
+    )
+    consumoEnergiaReactivaCapacitivaEnVArhP1 = Column(
+        "consumoenergiareactivacapacitivaenvarhp1",
+        String,
+        key="consumoEnergiaReactivaCapacitivaEnVArhP1",
+        nullable=True,
+    )
+    consumoEnergiaReactivaCapacitivaEnVArhP2 = Column(
+        "consumoenergiareactivacapacitivaenvarhp2",
+        String,
+        key="consumoEnergiaReactivaCapacitivaEnVArhP2",
+        nullable=True,
+    )
+    consumoEnergiaReactivaCapacitivaEnVArhP3 = Column(
+        "consumoenergiareactivacapacitivaenvarhp3",
+        String,
+        key="consumoEnergiaReactivaCapacitivaEnVArhP3",
+        nullable=True,
+    )
+    consumoEnergiaReactivaCapacitivaEnVArhP4 = Column(
+        "consumoenergiareactivacapacitivaenvarhp4",
+        String,
+        key="consumoEnergiaReactivaCapacitivaEnVArhP4",
+        nullable=True,
+    )
+    consumoEnergiaReactivaCapacitivaEnVArhP5 = Column(
+        "consumoenergiareactivacapacitivaenvarhp5",
+        String,
+        key="consumoEnergiaReactivaCapacitivaEnVArhP5",
+        nullable=True,
+    )
+    consumoEnergiaReactivaCapacitivaEnVArhP6 = Column(
+        "consumoenergiareactivacapacitivaenvarhp6",
+        String,
+        key="consumoEnergiaReactivaCapacitivaEnVArhP6",
         nullable=True,
     )
     potenciaDemandadaEnWP1 = Column(

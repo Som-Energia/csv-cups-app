@@ -100,7 +100,7 @@ Registre periodic de consum. Fa upsert sobre `record_consumptions` amb clau unic
 Capcaleres exactes:
 
 ```text
-cups,fechaInicioMesConsumo,fechaFinMesConsumo,codigoTarifaATR,consumoEnergiaActivaEnWhP1,consumoEnergiaActivaEnWhP2,consumoEnergiaActivaEnWhP3,consumoEnergiaActivaEnWhP4,consumoEnergiaActivaEnWhP5,consumoEnergiaActivaEnWhP6,consumoEnergiaReactivaEnVArhP1,consumoEnergiaReactivaEnVArhP2,consumoEnergiaReactivaEnVArhP3,consumoEnergiaReactivaEnVArhP4,consumoEnergiaReactivaEnVArhP5,consumoEnergiaReactivaEnVArhP6,potenciaDemandadaEnWP1,potenciaDemandadaEnWP2,potenciaDemandadaEnWP3,potenciaDemandadaEnWP4,potenciaDemandadaEnWP5,potenciaDemandadaEnWP6,codigoDHEquipoDeMedida,codigoTipoLectura
+cups,fechaInicioMesConsumo,fechaFinMesConsumo,codigoTarifaATR,consumoEnergiaActivaEnWhP1,consumoEnergiaActivaEnWhP2,consumoEnergiaActivaEnWhP3,consumoEnergiaActivaEnWhP4,consumoEnergiaActivaEnWhP5,consumoEnergiaActivaEnWhP6,consumoEnergiaReactivaInductivaEnVArhP1,consumoEnergiaReactivaInductivaEnVArhP2,consumoEnergiaReactivaInductivaEnVArhP3,consumoEnergiaReactivaInductivaEnVArhP4,consumoEnergiaReactivaInductivaEnVArhP5,consumoEnergiaReactivaInductivaEnVArhP6,consumoEnergiaReactivaCapacitivaEnVArhP1,consumoEnergiaReactivaCapacitivaEnVArhP2,consumoEnergiaReactivaCapacitivaEnVArhP3,consumoEnergiaReactivaCapacitivaEnVArhP4,consumoEnergiaReactivaCapacitivaEnVArhP5,consumoEnergiaReactivaCapacitivaEnVArhP6,potenciaDemandadaEnWP1,potenciaDemandadaEnWP2,potenciaDemandadaEnWP3,potenciaDemandadaEnWP4,potenciaDemandadaEnWP5,potenciaDemandadaEnWP6,codigoDHEquipoDeMedida,codigoTipoLectura
 ```
 
 ## Configuracio
@@ -111,7 +111,7 @@ Variables d'entorn suportades:
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql+psycopg2://csvapp:csvapp@localhost:5432/csvapp` | Connexio SQLAlchemy a PostgreSQL |
 | `REDIS_URL` | `redis://localhost:6379/0` | Connexio Redis per a la cua |
-| `APP_VERSION` | `0.11.1` | Versio mostrada al footer de la UI |
+| `APP_VERSION` | `0.13.0` | Versio mostrada al footer de la UI |
 | `UPLOAD_DIR` | `storage/uploads` sota el projecte | Directori persistent de pujades |
 | `IMPORT_CHUNK_SIZE` | `5000` | Files per lot d'upsert |
 | `IMPORT_SPLIT_ROWS` | `50000` | Files per chunk quan es divideix un import gran |

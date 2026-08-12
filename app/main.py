@@ -79,13 +79,21 @@ ACTIVE_ENERGY_FIELDS = [
     "consumoEnergiaActivaEnWhP5",
     "consumoEnergiaActivaEnWhP6",
 ]
-REACTIVE_ENERGY_FIELDS = [
-    "consumoEnergiaReactivaEnVArhP1",
-    "consumoEnergiaReactivaEnVArhP2",
-    "consumoEnergiaReactivaEnVArhP3",
-    "consumoEnergiaReactivaEnVArhP4",
-    "consumoEnergiaReactivaEnVArhP5",
-    "consumoEnergiaReactivaEnVArhP6",
+INDUCTIVE_REACTIVE_ENERGY_FIELDS = [
+    "consumoEnergiaReactivaInductivaEnVArhP1",
+    "consumoEnergiaReactivaInductivaEnVArhP2",
+    "consumoEnergiaReactivaInductivaEnVArhP3",
+    "consumoEnergiaReactivaInductivaEnVArhP4",
+    "consumoEnergiaReactivaInductivaEnVArhP5",
+    "consumoEnergiaReactivaInductivaEnVArhP6",
+]
+CAPACITIVE_REACTIVE_ENERGY_FIELDS = [
+    "consumoEnergiaReactivaCapacitivaEnVArhP1",
+    "consumoEnergiaReactivaCapacitivaEnVArhP2",
+    "consumoEnergiaReactivaCapacitivaEnVArhP3",
+    "consumoEnergiaReactivaCapacitivaEnVArhP4",
+    "consumoEnergiaReactivaCapacitivaEnVArhP5",
+    "consumoEnergiaReactivaCapacitivaEnVArhP6",
 ]
 DEMANDED_POWER_FIELDS = [
     "potenciaDemandadaEnWP1",
@@ -397,18 +405,12 @@ def build_consumption_history(consumptions: list[RecordConsumption]):
                         ),
                     },
                     {
-                        "title": "Energia reactiva",
-                        "fields": build_field_items(
-                            consumption,
-                            [
-                                "consumoEnergiaReactivaEnVArhP1",
-                                "consumoEnergiaReactivaEnVArhP2",
-                                "consumoEnergiaReactivaEnVArhP3",
-                                "consumoEnergiaReactivaEnVArhP4",
-                                "consumoEnergiaReactivaEnVArhP5",
-                                "consumoEnergiaReactivaEnVArhP6",
-                            ],
-                        ),
+                        "title": "Energia reactiva inductiva",
+                        "fields": build_field_items(consumption, INDUCTIVE_REACTIVE_ENERGY_FIELDS),
+                    },
+                    {
+                        "title": "Energia reactiva capacitiva",
+                        "fields": build_field_items(consumption, CAPACITIVE_REACTIVE_ENERGY_FIELDS),
                     },
                     {
                         "title": "Potència demandada",
@@ -628,9 +630,13 @@ def build_annual_consumption_summary(consumptions: list[RecordConsumption]):
         field_name: sum(parse_numeric_value(getattr(row["consumption"], field_name, None)) for row in included_rows) / 1000
         for field_name in ACTIVE_ENERGY_FIELDS
     }
-    reactive_totals = {
+    inductive_reactive_totals = {
         field_name: sum(parse_numeric_value(getattr(row["consumption"], field_name, None)) for row in included_rows) / 1000
-        for field_name in REACTIVE_ENERGY_FIELDS
+        for field_name in INDUCTIVE_REACTIVE_ENERGY_FIELDS
+    }
+    capacitive_reactive_totals = {
+        field_name: sum(parse_numeric_value(getattr(row["consumption"], field_name, None)) for row in included_rows) / 1000
+        for field_name in CAPACITIVE_REACTIVE_ENERGY_FIELDS
     }
     max_powers = {
         field_name: max(parse_numeric_value(getattr(row["consumption"], field_name, None)) for row in included_rows) / 1000
@@ -661,8 +667,12 @@ def build_annual_consumption_summary(consumptions: list[RecordConsumption]):
                 "items": build_metric_items(active_totals),
             },
             {
-                "title": "Energia reactiva últims 365 dies (kVArh)",
-                "items": build_metric_items(reactive_totals),
+                "title": "Energia reactiva inductiva últims 365 dies (kVArh)",
+                "items": build_metric_items(inductive_reactive_totals),
+            },
+            {
+                "title": "Energia reactiva capacitiva últims 365 dies (kVArh)",
+                "items": build_metric_items(capacitive_reactive_totals),
             },
             {
                 "title": "Potència màxima (kW)",
