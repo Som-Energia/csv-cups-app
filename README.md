@@ -97,6 +97,8 @@ codigoEmpresaDistribuidora,nombreEmpresaDistribuidora,cups,referenciaCatastralPS
 
 Registre periodic de consum. Fa upsert sobre `record_consumptions` amb clau unica `cups + fechaInicioMesConsumo + fechaFinMesConsumo`.
 
+Els imports només actualitzen registres existents quan alguna dada funcional ha canviat. Les files idèntiques conserven `uploaded_at` i no incrementen el comptador d'actualitzacions.
+
 Capcaleres exactes:
 
 ```text
@@ -111,7 +113,7 @@ Variables d'entorn suportades:
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql+psycopg2://csvapp:csvapp@localhost:5432/csvapp` | Connexio SQLAlchemy a PostgreSQL |
 | `REDIS_URL` | `redis://localhost:6379/0` | Connexio Redis per a la cua |
-| `APP_VERSION` | `0.13.1` | Versio mostrada al footer de la UI |
+| `APP_VERSION` | `0.13.2` | Versio mostrada al footer de la UI |
 | `UPLOAD_DIR` | `storage/uploads` sota el projecte | Directori persistent de pujades |
 | `IMPORT_CHUNK_SIZE` | `5000` | Files per lot d'upsert |
 | `IMPORT_SPLIT_ROWS` | `50000` | Files per chunk quan es divideix un import gran |

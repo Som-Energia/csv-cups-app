@@ -1,6 +1,7 @@
 import csv
 import io
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
@@ -96,6 +97,7 @@ class FakeUpsertDatabase:
 
     def execute(self, statement):
         self.executed.append(statement)
+        return SimpleNamespace(rowcount=len(statement.rows))
 
     def commit(self):
         self.commits += 1

@@ -26,3 +26,18 @@ docker run --rm --network cups-migration-test-net \
 docker stop cups-migration-postgres-test
 docker network rm cups-migration-test-net
 ```
+
+Conditional upsert tests also require an isolated PostgreSQL database:
+
+```bash
+docker run -d --rm --name cups-upsert-postgres-test \
+  -e POSTGRES_DB=cups_upsert_test \
+  -e POSTGRES_USER=csvapp \
+  -e POSTGRES_PASSWORD=csvapp \
+  postgres:16-alpine
+docker run --rm --network container:cups-upsert-postgres-test \
+  -e UPSERT_TEST_DATABASE_URL=postgresql://csvapp:csvapp@localhost:5432/cups_upsert_test \
+  -v "$PWD/tests:/app/tests:ro" csv-cups-app-app \
+  python -m unittest tests.test_upsert_integration
+docker stop cups-upsert-postgres-test
+```

@@ -9,7 +9,7 @@ from time import perf_counter, sleep
 from uuid import uuid4
 from zipfile import ZipFile
 
-from sqlalchemy import tuple_
+from sqlalchemy import or_, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -115,6 +115,27 @@ def deduplicate_rows(import_format, rows):
     return list(deduplicated.values())
 
 
+def execute_conditional_upsert(db, model, rows, key_fields, mutable_fields, existing_count):
+    insert_stmt = insert(model).values(rows)
+    update_columns = {field: insert_stmt.excluded[field] for field in mutable_fields}
+    update_columns["uploaded_at"] = insert_stmt.excluded.uploaded_at
+    changed_values = or_(
+        *(getattr(model, field).is_distinct_from(insert_stmt.excluded[field]) for field in mutable_fields)
+    )
+    statement = insert_stmt.on_conflict_do_update(
+        index_elements=[getattr(model, field) for field in key_fields],
+        set_=update_columns,
+        where=changed_values,
+    )
+    result = db.execute(statement)
+    db.commit()
+
+    created = len(rows) - existing_count
+    affected = result.rowcount
+    updated = max(affected - created, 0)
+    return created, updated
+
+
 def is_same_attempt(timestamp_a, timestamp_b):
     if timestamp_a is None or timestamp_b is None:
         return False
@@ -181,24 +202,16 @@ def upsert_ps_chunk(db: Session, rows):
     existing_cups = set(
         value[0] for value in db.query(Record.cups).filter(Record.cups.in_(cups_values)).all()
     )
-    created = len(deduplicated_rows) - len(existing_cups)
-    updated = len(existing_cups)
-
-    insert_stmt = insert(Record).values(deduplicated_rows)
-    update_columns = {
-        header: insert_stmt.excluded[header]
-        for header in get_headers_for_format(IMPORT_FORMAT_PS)
-        if header != "cups"
-    }
-    update_columns["uploaded_at"] = insert_stmt.excluded.uploaded_at
-    db.execute(
-        insert_stmt.on_conflict_do_update(
-            index_elements=[Record.cups],
-            set_=update_columns,
-        )
+    return execute_conditional_upsert(
+        db,
+        Record,
+        deduplicated_rows,
+        key_fields=("cups",),
+        mutable_fields=tuple(
+            header for header in get_headers_for_format(IMPORT_FORMAT_PS) if header != "cups"
+        ),
+        existing_count=len(existing_cups),
     )
-    db.commit()
-    return created, updated
 
 
 def upsert_consumption_chunk(db: Session, rows):
@@ -225,28 +238,19 @@ def upsert_consumption_chunk(db: Session, rows):
         )
         .all()
     )
-    created = len(deduplicated_rows) - len(existing_keys)
-    updated = len(existing_keys)
-
-    insert_stmt = insert(RecordConsumption).values(deduplicated_rows)
-    update_columns = {
-        header: insert_stmt.excluded[header]
-        for header in get_headers_for_format(IMPORT_FORMAT_CONSUMPTION)
-        if header not in ("cups", "fechaInicioMesConsumo", "fechaFinMesConsumo")
-    }
-    update_columns["uploaded_at"] = insert_stmt.excluded.uploaded_at
-    db.execute(
-        insert_stmt.on_conflict_do_update(
-            index_elements=[
-                RecordConsumption.cups,
-                RecordConsumption.fechaInicioMesConsumo,
-                RecordConsumption.fechaFinMesConsumo,
-            ],
-            set_=update_columns,
-        )
+    key_fields = ("cups", "fechaInicioMesConsumo", "fechaFinMesConsumo")
+    return execute_conditional_upsert(
+        db,
+        RecordConsumption,
+        deduplicated_rows,
+        key_fields=key_fields,
+        mutable_fields=tuple(
+            header
+            for header in get_headers_for_format(IMPORT_FORMAT_CONSUMPTION)
+            if header not in key_fields
+        ),
+        existing_count=len(existing_keys),
     )
-    db.commit()
-    return created, updated
 
 
 def upsert_autoconsumo_chunk(db: Session, rows):
@@ -280,29 +284,19 @@ def upsert_autoconsumo_chunk(db: Session, rows):
         )
         .all()
     )
-    created = len(deduplicated_rows) - len(existing_keys)
-    updated = len(existing_keys)
-
-    insert_stmt = insert(RecordAutoconsumo).values(deduplicated_rows)
-    update_columns = {
-        header: insert_stmt.excluded[header]
-        for header in get_headers_for_format(IMPORT_FORMAT_AUTOCONSUMO)
-        if header not in ("cau", "fechaInicioReparto", "cups", "horaCoeficienteVariableReparto")
-    }
-    update_columns["uploaded_at"] = insert_stmt.excluded.uploaded_at
-    db.execute(
-        insert_stmt.on_conflict_do_update(
-            index_elements=[
-                RecordAutoconsumo.cau,
-                RecordAutoconsumo.fechaInicioReparto,
-                RecordAutoconsumo.cups,
-                RecordAutoconsumo.horaCoeficienteVariableReparto,
-            ],
-            set_=update_columns,
-        )
+    key_fields = ("cau", "fechaInicioReparto", "cups", "horaCoeficienteVariableReparto")
+    return execute_conditional_upsert(
+        db,
+        RecordAutoconsumo,
+        deduplicated_rows,
+        key_fields=key_fields,
+        mutable_fields=tuple(
+            header
+            for header in get_headers_for_format(IMPORT_FORMAT_AUTOCONSUMO)
+            if header not in key_fields
+        ),
+        existing_count=len(existing_keys),
     )
-    db.commit()
-    return created, updated
 
 
 def upsert_chunk(db: Session, import_format, rows):
