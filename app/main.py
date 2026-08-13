@@ -170,9 +170,9 @@ def serialize_job(job: ImportJob) -> JobOut:
         and job.queued_chunks == 0
         and job.processing_chunks == 0
     )
-    if job.total_bytes > 0:
+    if job.split_total_bytes > 0:
         payload.split_progress_percent = min(
-            (float(job.split_processed_bytes) / float(job.total_bytes)) * 100,
+            (float(job.split_processed_bytes) / float(job.split_total_bytes)) * 100,
             100.0,
         )
     else:
@@ -1115,6 +1115,7 @@ def requeue_job(
     job.completed_chunks = 0
     job.failed_chunks = 0
     job.split_processed_bytes = 0
+    job.split_total_bytes = 0
     job.split_created_chunks = 0
     db.commit()
     db.refresh(job)

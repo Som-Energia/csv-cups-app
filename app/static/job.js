@@ -78,12 +78,16 @@ if (jobId) {
         }
 
         const uploadPercent = percentage(job.uploaded_bytes, job.total_bytes);
-        const processingPercent = percentage(job.processed_bytes, job.total_bytes);
+        const processingPercent = job.status === "splitting"
+            ? null
+            : percentage(job.processed_bytes, job.total_bytes);
 
         uploadBar.style.width = `${uploadPercent}%`;
-        processingBar.style.width = `${processingPercent}%`;
+        processingBar.style.width = processingPercent === null ? "0%" : `${processingPercent}%`;
         uploadText.textContent = `${uploadPercent.toFixed(1)}% pujat (${formatBytes(job.uploaded_bytes)} / ${formatBytes(job.total_bytes)})`;
-        processingText.textContent = `${processingPercent.toFixed(1)}% processat (${formatBytes(job.processed_bytes)} / ${formatBytes(job.total_bytes)})`;
+        processingText.textContent = processingPercent === null
+            ? `${formatNumber(job.processed_rows)} files processades mentre es descobreixen chunks`
+            : `${processingPercent.toFixed(1)}% processat (${formatBytes(job.processed_bytes)} / ${formatBytes(job.total_bytes)})`;
 
         processedRowsNode.textContent = formatNumber(job.processed_rows);
         createdRowsNode.textContent = formatNumber(job.created_rows);
@@ -140,7 +144,7 @@ if (jobId) {
         const percent = Number(job.split_progress_percent || 0);
         splitProgressBar.style.width = `${percent}%`;
         splitProgressText.textContent = `${percent.toFixed(1)}% dividit`;
-        splitProgressMeta.textContent = `${formatBytes(job.split_processed_bytes)} / ${formatBytes(job.total_bytes)} llegits · ${formatNumber(job.split_created_chunks)} chunks creats`;
+        splitProgressMeta.textContent = `${formatBytes(job.split_processed_bytes)} / ${formatBytes(job.split_total_bytes)} llegits · ${formatNumber(job.split_created_chunks)} chunks creats`;
     };
 
     const renderChunks = (chunks, total) => {
@@ -424,6 +428,9 @@ function formatNumber(value) {
 }
 
 function estimateEta(job) {
+    if (job.status === "splitting") {
+        return "-";
+    }
     if (!job.rows_per_second || !job.total_bytes || !job.processed_bytes) {
         return "-";
     }

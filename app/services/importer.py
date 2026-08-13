@@ -1,10 +1,11 @@
 import csv
+import errno
 import io
 from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, sleep
 from uuid import uuid4
 from zipfile import ZipFile
 
@@ -37,6 +38,7 @@ CHUNK_STATUS_PROCESSING = "processing"
 CHUNK_STATUS_COMPLETED = "completed"
 CHUNK_STATUS_FAILED = "failed"
 SPLIT_PROGRESS_COMMIT_BYTES = 100 * 1024 * 1024
+STALE_FILE_HANDLE_RETRY_DELAYS = (5, 30)
 TERMINAL_JOB_STATUSES = {JOB_STATUS_COMPLETED, JOB_STATUS_PARTIAL_FAILED, JOB_STATUS_FAILED}
 
 
@@ -340,6 +342,16 @@ def cleanup_job_chunks(db: Session, job: ImportJob, commit=True):
         db.commit()
 
 
+def cleanup_attempt_chunk_files(job_id, attempt_token):
+    pattern = "job_{:06d}_{}_chunk_*.csv".format(job_id, attempt_token[:8])
+    try:
+        paths = list(settings.chunk_upload_dir.glob(pattern))
+    except OSError:
+        return
+    for path in paths:
+        delete_path_if_exists(path)
+
+
 def cleanup_job_artifacts(db: Session, job: ImportJob, delete_source=False):
     cleanup_job_chunks(db, job, commit=False)
     source_deleted = delete_path_if_exists(job.stored_path) if delete_source else False
@@ -401,7 +413,7 @@ def update_split_progress(
     created_chunks,
     force=False,
 ):
-    processed_bytes = min(processed_bytes, job.total_bytes or processed_bytes)
+    processed_bytes = min(processed_bytes, job.split_total_bytes or processed_bytes)
     bytes_delta = processed_bytes - (job.split_processed_bytes or 0)
     chunks_delta = created_chunks - (job.split_created_chunks or 0)
     if not force and bytes_delta < SPLIT_PROGRESS_COMMIT_BYTES and chunks_delta <= 0:
@@ -433,6 +445,7 @@ def inspect_zip_import_source(path: Path):
                         "import_format": import_format,
                         "headers": headers,
                         "archive_member": member.filename,
+                        "split_total_bytes": member.file_size,
                     }
                 )
         if not matched_sources:
@@ -461,6 +474,7 @@ def inspect_import_source(stored_path):
         "import_format": import_format,
         "headers": headers,
         "archive_member": None,
+        "split_total_bytes": path.stat().st_size,
     }
 
 
@@ -495,6 +509,8 @@ def split_csv_into_chunks(db: Session, job: ImportJob, started_at, attempt_token
     source = inspect_import_source(job.stored_path)
     import_format = source["import_format"]
     headers = get_headers_for_format(import_format)
+    job.split_total_bytes = source["split_total_bytes"]
+    db.commit()
 
     with open_import_source(source) as (raw_file, text_wrapper):
         reader = csv.DictReader(text_wrapper)
@@ -571,7 +587,7 @@ def split_csv_into_chunks(db: Session, job: ImportJob, started_at, attempt_token
             job,
             started_at,
             attempt_token,
-            job.total_bytes,
+            job.split_total_bytes,
             created_chunks,
             force=True,
         )
@@ -617,7 +633,10 @@ def refresh_import_job_status(db: Session, job_id):
         if progress_timestamps:
             job.last_progress_at = max(progress_timestamps)
 
-    split_in_progress = job.status == JOB_STATUS_SPLITTING and job.split_processed_bytes < job.total_bytes
+    split_in_progress = (
+        job.status == JOB_STATUS_SPLITTING
+        and job.split_processed_bytes < job.split_total_bytes
+    )
 
     if split_in_progress:
         job.status = JOB_STATUS_SPLITTING
@@ -676,6 +695,53 @@ def refresh_import_job_status(db: Session, job_id):
     return job
 
 
+def start_split_attempt(db: Session, job: ImportJob):
+    previous_attempt_token = job.attempt_token
+    now = utcnow()
+    job.status = JOB_STATUS_SPLITTING
+    job.started_at = now
+    job.attempt_token = new_attempt_token()
+    job.finished_at = None
+    job.last_progress_at = now
+    job.processed_bytes = 0
+    job.processed_rows = 0
+    job.created_rows = 0
+    job.updated_rows = 0
+    job.error_rows = 0
+    job.rows_per_second = 0
+    job.error_message = None
+    job.total_chunks = 0
+    job.queued_chunks = 0
+    job.processing_chunks = 0
+    job.completed_chunks = 0
+    job.failed_chunks = 0
+    job.split_processed_bytes = 0
+    job.split_total_bytes = 0
+    job.split_created_chunks = 0
+    db.commit()
+    cleanup_job_chunks(db, job)
+    if previous_attempt_token:
+        cleanup_attempt_chunk_files(job.id, previous_attempt_token)
+    return now, job.attempt_token
+
+
+def prepare_stale_handle_retry(db: Session, job_id, attempt_token, retry_number, delay):
+    db.rollback()
+    job = db.query(ImportJob).filter(ImportJob.id == job_id).first()
+    if job is None or job.attempt_token != attempt_token:
+        raise JobSupersededError("Import job attempt has been superseded.")
+
+    job.attempt_token = new_attempt_token()
+    job.status = JOB_STATUS_SPLITTING
+    job.last_progress_at = utcnow()
+    job.error_message = (
+        "Stale storage handle while splitting. Retrying attempt {} in {} seconds."
+    ).format(retry_number, delay)
+    db.commit()
+    cleanup_job_chunks(db, job)
+    cleanup_attempt_chunk_files(job_id, attempt_token)
+
+
 def process_import_job(job_id):
     db = SessionLocal()
     try:
@@ -685,36 +751,29 @@ def process_import_job(job_id):
         if job.status != JOB_STATUS_QUEUED:
             return
 
-        cleanup_job_chunks(db, job)
+        for attempt_index in range(len(STALE_FILE_HANDLE_RETRY_DELAYS) + 1):
+            job = db.query(ImportJob).filter(ImportJob.id == job_id).first()
+            now, active_attempt_token = start_split_attempt(db, job)
+            try:
+                created_chunks = split_csv_into_chunks(db, job, now, active_attempt_token)
+                break
+            except OSError as exc:
+                if exc.errno != errno.ESTALE or attempt_index >= len(STALE_FILE_HANDLE_RETRY_DELAYS):
+                    raise
+                delay = STALE_FILE_HANDLE_RETRY_DELAYS[attempt_index]
+                prepare_stale_handle_retry(
+                    db,
+                    job_id,
+                    active_attempt_token,
+                    attempt_index + 2,
+                    delay,
+                )
+                sleep(delay)
 
-        now = utcnow()
-        job.status = JOB_STATUS_SPLITTING
-        job.started_at = now
-        job.attempt_token = new_attempt_token()
-        job.finished_at = None
-        job.last_progress_at = now
-        job.processed_bytes = 0
-        job.processed_rows = 0
-        job.created_rows = 0
-        job.updated_rows = 0
-        job.error_rows = 0
-        job.rows_per_second = 0
-        job.error_message = None
-        job.total_chunks = 0
-        job.queued_chunks = 0
-        job.processing_chunks = 0
-        job.completed_chunks = 0
-        job.failed_chunks = 0
-        job.split_processed_bytes = 0
-        job.split_created_chunks = 0
-        db.commit()
-        active_attempt_token = job.attempt_token
-
-        created_chunks = split_csv_into_chunks(db, job, now, active_attempt_token)
-
+        job = db.query(ImportJob).filter(ImportJob.id == job_id).first()
         job.total_chunks = created_chunks
         job.queued_chunks = created_chunks
-        job.split_processed_bytes = job.total_bytes
+        job.split_processed_bytes = job.split_total_bytes
         job.split_created_chunks = created_chunks
         job.status = JOB_STATUS_PROCESSING if created_chunks else JOB_STATUS_COMPLETED
         if not created_chunks:

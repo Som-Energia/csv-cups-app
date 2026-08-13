@@ -189,6 +189,7 @@ class JobOut(BaseModel):
     completed_chunks: int = 0
     failed_chunks: int = 0
     split_processed_bytes: int = 0
+    split_total_bytes: int = 0
     split_created_chunks: int = 0
     split_progress_percent: float = 0.0
 

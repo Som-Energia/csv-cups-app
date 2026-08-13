@@ -32,6 +32,7 @@ class ImportJob(Base):
     completed_chunks = Column(Integer, nullable=False, default=0)
     failed_chunks = Column(Integer, nullable=False, default=0)
     split_processed_bytes = Column(BigInteger, nullable=False, default=0)
+    split_total_bytes = Column(BigInteger, nullable=False, default=0)
     split_created_chunks = Column(Integer, nullable=False, default=0)
 
 

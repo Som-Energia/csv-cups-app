@@ -1,0 +1,2 @@
+ALTER TABLE import_jobs
+ADD COLUMN IF NOT EXISTS split_total_bytes BIGINT NOT NULL DEFAULT 0;
