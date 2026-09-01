@@ -1210,7 +1210,7 @@ def get_record_bono_social(cups: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Record not found")
     return {
         "cups": record.cups,
-        "hasBonoSocial": str(record.aplicacionBonoSocial or "").strip() == "1",
+        "hasBonoSocial": str(record.aplicacionBonoSocial or "").strip() in {"1", "S"},
     }
 
 

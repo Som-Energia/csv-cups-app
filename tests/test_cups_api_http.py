@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -7,8 +8,9 @@ from app.main import app
 
 
 class EmptyQuery:
-    def __init__(self):
+    def __init__(self, record=None):
         self.cups_lookup = None
+        self.record = record
 
     def filter(self, criterion):
         self.cups_lookup = criterion.right.value
@@ -24,15 +26,16 @@ class EmptyQuery:
         return []
 
     def first(self):
-        return None
+        return self.record
 
 
 class EmptyDatabase:
-    def __init__(self):
+    def __init__(self, record=None):
+        self.record = record
         self.queries = []
 
     def query(self, *args):
-        query = EmptyQuery()
+        query = EmptyQuery(self.record)
         self.queries.append(query)
         return query
 
@@ -116,3 +119,23 @@ class CupsApiHttpTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.db.queries[-1].cups_lookup, "%ES123%")
+
+    def test_bono_social_maps_supported_stored_values(self):
+        for stored_value, expected_value in (
+            ("S", True),
+            ("1", True),
+            ("N", False),
+            ("0", False),
+            ("", False),
+            (None, False),
+        ):
+            with self.subTest(stored_value=stored_value):
+                self.db.record = SimpleNamespace(
+                    cups=self.canonical_cups,
+                    aplicacionBonoSocial=stored_value,
+                )
+
+                response = self.client.get(f"/api/records/{self.canonical_cups}/bono-social")
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["hasBonoSocial"], expected_value)
