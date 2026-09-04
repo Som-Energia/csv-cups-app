@@ -44,6 +44,7 @@ from app.services.importer import (
     retry_failed_chunks,
 )
 from app.settings import settings
+from app.sips_display import format_code_label, format_sips_value
 
 
 app = FastAPI(title="CSV CUPS App")
@@ -188,7 +189,7 @@ def format_tariff_label(value):
     normalized_value = str(value).strip() if value not in (None, "") else ""
     if not normalized_value:
         return "-"
-    return ATR_TARIFF_LABELS.get(normalized_value, normalized_value)
+    return format_code_label(normalized_value, ATR_TARIFF_LABELS)
 
 
 def format_field_value(value):
@@ -196,11 +197,9 @@ def format_field_value(value):
 
 
 def format_display_value(value, field_name: str | None = None):
-    if value in (None, ""):
-        return "-"
     if field_name in ("codigoTarifaATREnVigor", "codigoTarifaATR"):
         return format_tariff_label(value)
-    return value
+    return format_sips_value(value, field_name)
 
 
 RECORD_FIELD_FALLBACKS = {
@@ -209,6 +208,16 @@ RECORD_FIELD_FALLBACKS = {
     "codigoLecturaRemota": "legacy_codigoTelegestion",
     "acogimientoAutoconsumo": "legacy_codigoAutoconsumo",
     "cnae": "legacy_CNAE",
+}
+
+RECORD_FIELD_DESCRIPTIONS = {
+    "codigoEmpresaDistribuidora": "nombreEmpresaDistribuidora",
+    "codigoProvinciaPS": "desProvinciaPS",
+    "codigoMunicipioPS": "desMunicipioPS",
+    "PoblacionPS": "desPoblacionPS",
+    "codigoProvinciaTitular": "desProvinciaTitular",
+    "codigoMunicipioTitular": "desMunicipioTitular",
+    "PoblacionTitular": "desPoblacionTitular",
 }
 
 
@@ -221,6 +230,16 @@ def get_record_field_value(source, field_name: str):
         return value
     fallback_value = getattr(source, fallback_field_name, None)
     return fallback_value if fallback_value not in (None, "") else value
+
+
+def format_record_display_value(record: Record, field_name: str):
+    value = get_record_field_value(record, field_name)
+    description_field = RECORD_FIELD_DESCRIPTIONS.get(field_name)
+    if value not in (None, "") and description_field is not None:
+        description = get_record_field_value(record, description_field)
+        if description not in (None, ""):
+            return f"{value} - {description}"
+    return format_display_value(value, field_name)
 
 
 def serialize_record(record: Record) -> dict:
@@ -286,7 +305,7 @@ def build_record_groups(record: Record):
                 {
                     "name": field_name,
                     "label": get_field_label(field_name),
-                    "value": format_display_value(get_record_field_value(record, field_name), field_name),
+                    "value": format_record_display_value(record, field_name),
                 }
             )
         grouped_fields.append({"name": group_name, "fields": fields})
@@ -297,8 +316,8 @@ def format_consumption_period(consumption: RecordConsumption) -> str:
     if consumption is None:
         return "-"
     return "{} - {}".format(
-        format_field_value(consumption.fechaInicioMesConsumo),
-        format_field_value(consumption.fechaFinMesConsumo),
+        format_display_value(consumption.fechaInicioMesConsumo, "fechaInicioMesConsumo"),
+        format_display_value(consumption.fechaFinMesConsumo, "fechaFinMesConsumo"),
     )
 
 
@@ -309,7 +328,7 @@ def build_field_items(source, field_names: list[str]):
             {
                 "name": field_name,
                 "label": get_field_label(field_name),
-                "value": format_display_value(get_record_field_value(source, field_name), field_name)
+                "value": format_record_display_value(source, field_name)
                 if isinstance(source, Record)
                 else format_display_value(getattr(source, field_name, None), field_name),
             }
