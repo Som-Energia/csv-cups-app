@@ -82,7 +82,8 @@ class SipsPipelineIntegrationTests(unittest.TestCase):
                 "cups": CUPS, "cau": "CAU-TEST", "fechaInicioReparto": "2026-01-01",
                 "horaCoeficienteVariableReparto": "01", "coeficienteReparto": "0.5",
             }))
-        bodies = {"first": archive.getvalue(), "second": csv_body(PS_CSV_HEADERS, {
+        months = {"historical": "202501", "first": "202601", "second": "202602", "third": "202603"}
+        bodies = {"historical": archive.getvalue(), "first": archive.getvalue(), "second": csv_body(PS_CSV_HEADERS, {
             "cups": CUPS, "nombreEmpresaDistribuidora": "Updated",
         }).encode(), "third": csv_body(PS_CSV_HEADERS, {"cups": "INVALID"}).encode()}
 
@@ -113,14 +114,15 @@ class SipsPipelineIntegrationTests(unittest.TestCase):
                 if params.get("idProcedimiento") != ["42"] or params.get("nifEmpresa") != ["A12345678"]:
                     return self.send(400, b"")
                 files = []
-                for number, key in enumerate(("first", "second", "third")[:fixture.revision], 1):
+                for key in ("historical", *("first", "second", "third")[:fixture.revision]):
                     state = "DESCARGADO" if key in fixture.downloads else "DISPONIBLE"
                     if params.get("estado") != [state]:
                         continue
                     files.append({
-                        "uuid": key, "nombre": key + (".zip" if key == "first" else ".csv"),
+                        "uuid": key, "nombre": months[key] + "_" + key + (".zip" if key in ("first", "historical") else ".csv"),
                         "numeroBytes": len(bodies[key]), "hash": hashlib.md5(bodies[key]).hexdigest(),
-                        "fechaDisponibilidad": f"2026-0{number}-01T00:00:00Z",
+                        # An old data month republished recently is still history.
+                        "fechaDisponibilidad": "2026-12-01T00:00:00Z" if key == "historical" else f"{months[key][:4]}-{months[key][4:]}-01T00:00:00Z",
                         "uriDescarga": fixture.cfg.sips_api_url + "/download/" + key,
                         "idProcedimiento": "42", "nifEmpresa": "A12345678", "tipoFichero": "SIPS",
                     })

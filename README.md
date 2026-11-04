@@ -118,7 +118,7 @@ Variables d'entorn suportades:
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql+psycopg2://csvapp:csvapp@localhost:5432/csvapp` | Connexio SQLAlchemy a PostgreSQL |
 | `REDIS_URL` | `redis://localhost:6379/0` | Connexio Redis per a la cua |
-| `APP_VERSION` | `0.13.3` | Versio mostrada al footer de la UI |
+| `APP_VERSION` | `1.0.1` | Versio mostrada al footer de la UI |
 | `UPLOAD_DIR` | `storage/uploads` sota el projecte | Directori persistent de pujades |
 | `IMPORT_CHUNK_SIZE` | `5000` | Files per lot d'upsert |
 | `IMPORT_SPLIT_ROWS` | `50000` | Files per chunk quan es divideix un import gran |
@@ -138,7 +138,7 @@ El servei opcional `sips-sync` consulta les publicacions, descarrega les noves i
 
 Cal tenir l'alta SIPS aprovada per la CNMC i una **Consumer Key / Consumer Secret vigents amb permís de descàrrega**, el NIF de l'empresa i l'identificador del procediment autoritzat. No són dades públiques: el programa no tramita l'alta ni eludeix l'autorització.
 
-1. Copia `.env.example` a `.env` i omple `SIPS_CONSUMER_KEY`, `SIPS_CONSUMER_SECRET`, `SIPS_NIF_EMPRESA` i `SIPS_PROCEDURE_ID`.
+1. Copia `.env.example` a `.env` i omple `SIPS_CONSUMER_KEY`, `SIPS_CONSUMER_SECRET`, `SIPS_NIF_EMPRESA` i `SIPS_PROCEDURE_ID`. El [catàleg públic CNMC](https://api.cnmc.gob.es/catalogo/v1/procedimientos) identifica SIPS electricitat amb **`2`** i gas amb `3`; aquesta app suporta electricitat. Les credencials han d'estar autoritzades per al procediment.
 2. Si la credencial ofereix diversos tipus, configura `SIPS_FILE_TYPES` amb els valors exactes de `tipoFichero` que vulguis importar. El catàleg de CNMC els anomena `nombrecorto`.
 3. Arrenca **també els workers**:
 
@@ -160,6 +160,7 @@ La consulta s'executa en arrencar i després de cada `SIPS_POLL_SECONDS` (una ho
 | `SIPS_PROCEDURE_ID` | buit | Identificador del procediment SIPS autoritzat |
 | `SIPS_FILE_TYPES` | buit | Llista separada per comes; buida consulta tots els CSV/ZIP del procediment |
 | `SIPS_POLL_SECONDS` | `3600` | Espera entre passades (mínim 10 segons) |
+| `SIPS_START_AFTER_MONTH` | buit | Límit inferior exclusiu `YYYY-MM`, opcional; es combina amb el mes més recent importat |
 | `SIPS_MAX_DOWNLOAD_BYTES` | `53687091200` | Límit per fitxer comprimit: 50 GiB |
 | `SIPS_MAX_UNPACKED_BYTES` | `536870912000` | Límit descomprimit per fitxer: 500 GiB |
 
@@ -167,15 +168,27 @@ En producció, és preferible muntar el secret com a fitxer de només lectura (`
 
 Sense Docker, exporta les variables i executa `python sips_sync.py` com a servei supervisat. També es pot fer una passada des de cron amb `python sips_sync.py --once` (codi de sortida 1 si falla; `importing` vol dir que els workers encara treballen). No cal cap scheduler RQ addicional. En Kubernetes utilitza la mateixa imatge amb `python sips_sync.py`, o un CronJob amb `--once`, sempre amb el volum compartit.
 
+### Només mesos nous, no l'històric
+
+Es compara el **mes de les dades del nom del fitxer**, no `fechaDisponibilidad` de CNMC ni la data de pujada. Es reconeixen prefixos `YYYYMM`, `YYYYMMDD`, `YYYY-MM`, `YYYY-MM-DD` i `YYYY_MM_DD`.
+
+- Amb imports existents: es pren el mes més recent dels imports manuals completats sense errors i dels fitxers SIPS carregats correctament. Només s'admeten fitxers de mesos **estrictament posteriors**. Exemple: si ja tens `202609_...`, només octubre de 2026 en endavant.
+- Sense imports previs: només el mes més recent disponible; mai tot l'històric.
+- Si hi ha imports però no se'n pot deduir el mes, la sincronització s'atura sense descarregar. Configura `SIPS_START_AFTER_MONTH=2026-09` (exemple) amb el mes real que ja tens. Un valor anterior no fa retrocedir un mes conegut a la BD.
+- Els fitxers remots amb un nom sense mes recognoscible s'ignoren amb un avís; no se n'endevina el període a partir de la data de publicació.
+- S'admeten tots els fitxers del nou mes abans d'encolar-los, i es completen també els pendents del mateix lot. Un UUID nou d'un mes que ja està carregat no dispara una reimportació ni una correcció automàtica.
+
+Els pendents històrics sense jobs creats per versions anteriors queden en estat `skipped`. Els jobs **ja encolats** no es cancel·len ni es reverteixen automàticament; si tenies activa una versió anterior, atura `sips-sync` i revisa la cua abans d'actualitzar. Les fonts locals de pendents descartats es conserven per a revisió. Els logs mostren el mes de tall (`SIPS selection: after=...`).
+
 ### Fiabilitat i seguiment
 
 - OAuth2 `client_credentials`, token reutilitzat fins a la caducitat i una renovació en rebre 401. OAuth 1.0 va ser retirat per la CNMC el 13/10/2026.
-- Consulta tant `DISPONIBLE` com `DESCARGADO`: una descàrrega fallida o un altre client poden haver canviat l'estat remot. La primera passada importa tot l'històric encara accessible que coincideixi amb el filtre.
+- Consulta les metadades de `DISPONIBLE` i `DESCARGADO`: una descàrrega fallida o un altre client poden haver canviat l'estat remot. El filtre mensual s'aplica **abans de descarregar**, també en la primera passada.
 - Historial persistent `sips_files`, únic per origen/procediment/empresa/UUID. Els enllaços temporals de descàrrega i els tokens no es desen ni s'escriuen als logs.
 - Descàrrega en streaming a `.part`, verificació de bytes i MD5 proporcionats per CNMC i canvi de nom atòmic. MD5 només és la suma de comprovació del protocol; la seguretat del transport és HTTPS amb verificació TLS. No s'envia el token als enllaços de descàrrega, ni se segueixen redireccions ni enllaços a altres orígens.
 - ZIP amb múltiples CSV: un `ImportJob` per membre suportat, amb noms locals independents de les rutes del ZIP. No s'extreuen rutes remotes directament.
 - Un bloqueig PostgreSQL evita sincronitzadors simultanis. La creació de jobs és transaccional; si Redis falla entre el commit i l'encolat, la passada següent recupera els jobs sense tornar a descarregar ni duplicar-los.
-- Publicacions ordenades per disponibilitat. No es passa a la següent fins que tots els jobs de l'anterior acabin sense files rebutjades. Una publicació antiga apareguda tard es bloqueja per evitar sobreescriure dades més noves.
+- Fitxers ordenats pel mes de les dades i després per disponibilitat. No es passa al següent fins que tots els jobs de l'anterior acabin sense files rebutjades. Una publicació d'un mes antic apareguda tard s'ignora, encara que tingui data de publicació recent.
 - Errors de xarxa/descàrrega/encolat es reintenten a la passada següent. Errors d'importació o formats desconeguts requereixen revisió; no es marquen com a èxit. El ZIP verificat es conserva fins a completar l'import; després s'eliminen els fitxers i es conserva l'historial.
 
 ```bash
@@ -188,7 +201,7 @@ curl -X POST http://localhost:8000/api/jobs/123/retry-failed-chunks
 curl -X POST http://localhost:8000/api/jobs/123/requeue
 ```
 
-No esborris manualment fonts/chunks d'imports SIPS pendents. Els jobs encallats per una caiguda del worker segueixen utilitzant els mecanismes existents de reencolat; el sincronitzador no força un job que podria continuar executant-se. Si un fitxer pendent caduca a CNMC abans de poder descarregar-lo, cal que CNMC el torni a posar a disposició. Una entrada antiga bloquejada necessita revisió operativa; no es descarta silenciosament.
+No esborris manualment fonts/chunks d'imports SIPS pendents. Els jobs encallats per una caiguda del worker segueixen utilitzant els mecanismes existents de reencolat; el sincronitzador no força un job que podria continuar executant-se. Si un fitxer pendent caduca a CNMC abans de poder descarregar-lo, cal que CNMC el torni a posar a disposició. Els errors de descàrrega pendents apareixen com a `download_failed` i es reintenten sense haver de readmetre el mes.
 
 **Abast dels formats:** PS d'electricitat, consums i coeficients de repartiment d'autoconsum amb les capçaleres de `app/constants.py`. La descàrrega normalitza només les sis variants de majúscules documentades per CNMC 4.0 (`husoPS`, `bandaPS`, `paisPS`, `poblacionPS`, `paisTitular`, `poblacionTitular`). No s'han afegit models de gas, LOPD, vertits, multicomercialitzador o potències temporals. Els membres no compatibles d'un ZIP consten a `ignored_members`; un fitxer sense cap CSV compatible falla. Els canvis futurs de format es rebutgen, no s'importen amb columnes desplaçades. Manté els upserts actuals: no elimina registres absents d'una publicació ni aplica baixes/oposicions automàticament.
 

@@ -31,6 +31,7 @@ def config(directory):
     cfg.sips_procedure_id = "42"
     cfg.sips_file_types = ()
     cfg.sips_poll_seconds = 3600
+    cfg.sips_start_after_month = ""
     cfg.sips_max_download_bytes = 100000
     cfg.sips_max_unpacked_bytes = 100000
     cfg.upload_dir = Path(directory)
@@ -203,7 +204,8 @@ class SipsInboxTests(unittest.TestCase):
         self.client.download.assert_called_once()
 
     def test_failed_import_blocks_newer_snapshot_until_retried(self):
-        later = parse_remote_file(metadata(uuid="new", fechaDisponibilidad="2026-11-01T00:00:00Z"))
+        self.cfg.sips_start_after_month = "2026-09"
+        later = parse_remote_file(metadata(uuid="new", nombre="202611_PS.zip", fechaDisponibilidad="2026-11-01T00:00:00Z"))
         self.client.list_files.return_value.append(later)
         sync_locked(self.db, self.client, self.cfg)
         jobs = self.db.query(ImportJob).all()
@@ -231,23 +233,23 @@ class SipsInboxTests(unittest.TestCase):
         self.db.commit()
         sync_locked(self.db, self.client, self.cfg)
         self.client.list_files.return_value.append(parse_remote_file(metadata(
-            uuid="late", fechaDisponibilidad="2025-01-01T00:00:00Z",
+            uuid="late", nombre="202501_PS.zip", fechaDisponibilidad="2026-11-01T00:00:00Z",
         )))
-        self.assertEqual(sync_locked(self.db, self.client, self.cfg), "failed")
+        self.assertEqual(sync_locked(self.db, self.client, self.cfg), "idle")
         self.client.download.assert_called_once()
-        self.assertIn("older", self.db.query(SipsFile).filter_by(remote_id="late").one().error_message)
+        self.assertIsNone(self.db.query(SipsFile).filter_by(remote_id="late").first())
 
     def test_late_publication_does_not_overlap_active_workers(self):
         sync_locked(self.db, self.client, self.cfg)
         self.client.list_files.return_value.append(parse_remote_file(metadata(
-            uuid="late-active", fechaDisponibilidad="2025-01-01T00:00:00Z",
+            uuid="late-active", nombre="202501_PS.zip", fechaDisponibilidad="2026-11-01T00:00:00Z",
         )))
         self.assertEqual(sync_locked(self.db, self.client, self.cfg), "importing")
         self.client.download.assert_called_once()
         for job in self.db.query(ImportJob).all():
             job.status = "completed"
         self.db.commit()
-        self.assertEqual(sync_locked(self.db, self.client, self.cfg), "failed")
+        self.assertEqual(sync_locked(self.db, self.client, self.cfg), "idle")
         self.client.download.assert_called_once()
 
     def test_rejected_rows_are_not_success(self):

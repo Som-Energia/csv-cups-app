@@ -5,7 +5,7 @@ from pathlib import Path
 class Settings:
     def __init__(self):
         self.base_dir = Path(__file__).resolve().parent.parent
-        self.app_version = os.getenv("APP_VERSION", "0.13.3")
+        self.app_version = os.getenv("APP_VERSION", "1.0.1")
         self.upload_dir = Path(os.getenv("UPLOAD_DIR", self.base_dir / "storage" / "uploads"))
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.database_url = os.getenv(
@@ -29,6 +29,7 @@ class Settings:
             value.strip() for value in os.getenv("SIPS_FILE_TYPES", "").split(",")
         )))
         self.sips_poll_seconds = int(os.getenv("SIPS_POLL_SECONDS", "3600"))
+        self.sips_start_after_month = os.getenv("SIPS_START_AFTER_MONTH", "").strip()
         self.sips_max_download_bytes = int(os.getenv("SIPS_MAX_DOWNLOAD_BYTES", str(50 * 1024**3)))
         self.sips_max_unpacked_bytes = int(os.getenv("SIPS_MAX_UNPACKED_BYTES", str(500 * 1024**3)))
         self.chunk_upload_dir = self.upload_dir / "chunks"

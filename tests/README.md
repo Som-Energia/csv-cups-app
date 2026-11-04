@@ -6,13 +6,14 @@ Unit tests (no CNMC credentials, PostgreSQL or Redis required):
 
 ```bash
 pip install -r requirements.txt -r tests/requirements.txt
-python -m unittest tests.test_sips_sync -v
+python -m unittest tests.test_sips_sync tests.test_sips_months -v
 ```
 
 End-to-end tests use a local HTTPS CNMC fixture with a temporary trusted certificate,
 real PostgreSQL, Redis and an RQ worker subprocess. They verify OAuth2, anonymous
 checksummed download, multi-member ZIP imports, HTTP record/job queries, subsequent
-updates without duplicate downloads, rejected-row recovery, the synchronizer lock,
+updates without duplicate downloads, exclusion of republished historical months,
+rejected-row recovery, the synchronizer lock,
 concurrent initialization on an empty database and upgrading existing import tables. `openssl` must be installed. No live CNMC data/credentials are used.
 
 **Destructive, disposable services only:** the suite resets the `public` schema in

@@ -68,9 +68,10 @@ Variables suportades:
 - `SIPS_API_URL` (HTTPS, default `https://api.cnmc.gob.es`)
 - `SIPS_CONSUMER_KEY`, `SIPS_CONSUMER_SECRET` (credencials vigents; nomes al sincronitzador)
 - `SIPS_CONSUMER_SECRET_FILE` (secret muntat, preferent sobre variable)
-- `SIPS_NIF_EMPRESA`, `SIPS_PROCEDURE_ID` (obligatoris per SIPS, no endevinar ID)
+- `SIPS_NIF_EMPRESA`, `SIPS_PROCEDURE_ID` (obligatoris; cataleg public de produccio: `2` electricitat, `3` gas)
 - `SIPS_FILE_TYPES` (llista de tipus CNMC exactes separats per comes; buit = tots els CSV/ZIP)
 - `SIPS_POLL_SECONDS` (3600, minim 10)
+- `SIPS_START_AFTER_MONTH` (buit; limit exclusiu YYYY-MM si cal indicar el mes existent)
 - `SIPS_MAX_DOWNLOAD_BYTES` (53687091200), `SIPS_MAX_UNPACKED_BYTES` (536870912000)
 
 Les tres critiques son:
@@ -217,7 +218,10 @@ Si el canvi afecta imports:
 - Streaming, MD5 CNMC + mida, `.part` i rename atomic. MD5 no es usa per autenticacio.
 - Lock PostgreSQL de sessio, no lock Redis amb TTL que podria caducar a mitja descarrega.
 - Persistir recepcio i jobs abans d'encolar; IDs RQ estables recuperen errors d'encolat.
-- No marcar complet fins que TOTS els jobs acabin sense errors. No aplicar publicacions noves abans de completar les anteriors; snapshots antics rebuts tard es bloquegen.
+- No marcar complet fins que TOTS els jobs acabin sense errors. Ordenar pel mes de dades del nom del fitxer, no per fechaDisponibilidad.
+- Nomes mesos estrictament posteriors al maxim importat sense errors (manuals inclosos). Instal·lacio buida: nomes ultim mes disponible. Noms locals sense mes i sense altra referencia: exigir SIPS_START_AFTER_MONTH, mai descarregar tot l'historic.
+- Admetre tot el lot mensual abans d'encolar. Estats selected/download_failed identifiquen fitxers ja admesos que han de completar-se encara que un altre fitxer del mes hagi acabat.
+- Pendents antics de versions anteriors sense jobs: skipped si no son posteriors al tall. No cancel·lar automaticament jobs ja encolats. Fitxers remots sense mes recognoscible: ignorar amb avis, mai usar la data de publicacio com a mes de dades.
 - No eliminar fonts pendents. Fitxers verificats es conserven fins a completar; l'historial persisteix despres de la neteja.
 - SIPS prepara multiples CSV per ZIP i normalitza sis aliases de capcalera CNMC 4.0; les pujades manuals mantenen la validacio existent.
 - Gas i altres formats no modelats no s'importen: membres ignorats visibles a `--status`; cap CSV compatible = error. No s'apliquen baixes/oposicions ni s'esborren registres absents d'un snapshot.
