@@ -30,11 +30,12 @@ Dependencias Python actuals:
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 SQLAlchemy==2.0.35
-Jinja2==3.1.4
-python-multipart==0.0.9
+Jinja2==3.1.6
+python-multipart==0.0.32
 psycopg2-binary==2.9.9
 redis==5.0.8
 rq==1.16.2
+requests==2.32.5
 ```
 
 ## Estructura del projecte
@@ -81,7 +82,7 @@ Components:
 
 ## Formats d'importacio suportats
 
-L'aplicacio suporta dos formats diferents, detectats per les capcaleres exactes del CSV.
+L'aplicacio suporta PS, consums i autoconsum, detectats per les capcaleres exactes del CSV.
 
 ### Format PS
 
@@ -105,6 +106,10 @@ Capcaleres exactes:
 cups,fechaInicioMesConsumo,fechaFinMesConsumo,codigoTarifaATR,consumoEnergiaActivaEnWhP1,consumoEnergiaActivaEnWhP2,consumoEnergiaActivaEnWhP3,consumoEnergiaActivaEnWhP4,consumoEnergiaActivaEnWhP5,consumoEnergiaActivaEnWhP6,consumoEnergiaReactivaInductivaEnVArhP1,consumoEnergiaReactivaInductivaEnVArhP2,consumoEnergiaReactivaInductivaEnVArhP3,consumoEnergiaReactivaInductivaEnVArhP4,consumoEnergiaReactivaInductivaEnVArhP5,consumoEnergiaReactivaInductivaEnVArhP6,consumoEnergiaReactivaCapacitivaEnVArhP1,consumoEnergiaReactivaCapacitivaEnVArhP2,consumoEnergiaReactivaCapacitivaEnVArhP3,consumoEnergiaReactivaCapacitivaEnVArhP4,consumoEnergiaReactivaCapacitivaEnVArhP5,consumoEnergiaReactivaCapacitivaEnVArhP6,potenciaDemandadaEnWP1,potenciaDemandadaEnWP2,potenciaDemandadaEnWP3,potenciaDemandadaEnWP4,potenciaDemandadaEnWP5,potenciaDemandadaEnWP6,codigoDHEquipoDeMedida,codigoTipoLectura
 ```
 
+### Format d'autoconsum
+
+Coeficients de repartiment, amb capçaleres `cau,fechaInicioReparto,cups,horaCoeficienteVariableReparto,coeficienteReparto`. Fa upsert a `record_autoconsumos` per `cau + fechaInicioReparto + cups + horaCoeficienteVariableReparto`.
+
 ## Configuracio
 
 Variables d'entorn suportades:
@@ -124,6 +129,73 @@ Variables realment critiques en produccio:
 - `DATABASE_URL`
 - `REDIS_URL`
 - `UPLOAD_DIR`
+
+## Sincronització automàtica amb SIPS / CNMC
+
+El servei opcional `sips-sync` consulta les publicacions, descarrega les noves i crea jobs al mateix pipeline Redis/RQ que les pujades manuals. No cal pujar els fitxers a mà.
+
+### Alta i activació
+
+Cal tenir l'alta SIPS aprovada per la CNMC i una **Consumer Key / Consumer Secret vigents amb permís de descàrrega**, el NIF de l'empresa i l'identificador del procediment autoritzat. No són dades públiques: el programa no tramita l'alta ni eludeix l'autorització.
+
+1. Copia `.env.example` a `.env` i omple `SIPS_CONSUMER_KEY`, `SIPS_CONSUMER_SECRET`, `SIPS_NIF_EMPRESA` i `SIPS_PROCEDURE_ID`.
+2. Si la credencial ofereix diversos tipus, configura `SIPS_FILE_TYPES` amb els valors exactes de `tipoFichero` que vulguis importar. El catàleg de CNMC els anomena `nombrecorto`.
+3. Arrenca **també els workers**:
+
+```bash
+chmod 600 .env
+docker compose --profile sips up -d --build
+docker compose logs -f sips-sync
+```
+
+La consulta s'executa en arrencar i després de cada `SIPS_POLL_SECONDS` (una hora per defecte). El perfil és optatiu perquè una instal·lació sense credencials segueixi funcionant igual. `docker compose stop sips-sync` atura les consultes sense interrompre els imports encolats.
+
+| Variable | Default | Ús |
+| --- | --- | --- |
+| `SIPS_API_URL` | `https://api.cnmc.gob.es` | Origen HTTPS; preproducció: `https://apipre.cnmc.gob.es` |
+| `SIPS_CONSUMER_KEY` | buit | Clau OAuth2 autoritzada |
+| `SIPS_CONSUMER_SECRET` | buit | Secret OAuth2; no guardar a Git |
+| `SIPS_CONSUMER_SECRET_FILE` | buit | Fitxer de secret muntat dins del contenidor; té preferència sobre l'anterior |
+| `SIPS_NIF_EMPRESA` | buit | NIF vinculat a la credencial |
+| `SIPS_PROCEDURE_ID` | buit | Identificador del procediment SIPS autoritzat |
+| `SIPS_FILE_TYPES` | buit | Llista separada per comes; buida consulta tots els CSV/ZIP del procediment |
+| `SIPS_POLL_SECONDS` | `3600` | Espera entre passades (mínim 10 segons) |
+| `SIPS_MAX_DOWNLOAD_BYTES` | `53687091200` | Límit per fitxer comprimit: 50 GiB |
+| `SIPS_MAX_UNPACKED_BYTES` | `536870912000` | Límit descomprimit per fitxer: 500 GiB |
+
+En producció, és preferible muntar el secret com a fitxer de només lectura (`SIPS_CONSUMER_SECRET_FILE=/run/secrets/cnmc_secret`) mitjançant Docker secrets o Kubernetes Secret; la configuració Compose base no munta aquest fitxer per tu. Només `sips-sync` necessita credencials CNMC. Comparteix **el mateix `DATABASE_URL`, `REDIS_URL` i `UPLOAD_DIR`** entre `app`, `worker` i `sips-sync`, amb permisos de lectura/escriptura adequats (fitxers nous 0600, directoris SIPS 0700; mateix UID o ACL explícita). No exposis l'aplicació sense control d'accés: tracta dades confidencials i l'API actual no incorpora autenticació.
+
+Sense Docker, exporta les variables i executa `python sips_sync.py` com a servei supervisat. També es pot fer una passada des de cron amb `python sips_sync.py --once` (codi de sortida 1 si falla; `importing` vol dir que els workers encara treballen). No cal cap scheduler RQ addicional. En Kubernetes utilitza la mateixa imatge amb `python sips_sync.py`, o un CronJob amb `--once`, sempre amb el volum compartit.
+
+### Fiabilitat i seguiment
+
+- OAuth2 `client_credentials`, token reutilitzat fins a la caducitat i una renovació en rebre 401. OAuth 1.0 va ser retirat per la CNMC el 13/10/2026.
+- Consulta tant `DISPONIBLE` com `DESCARGADO`: una descàrrega fallida o un altre client poden haver canviat l'estat remot. La primera passada importa tot l'històric encara accessible que coincideixi amb el filtre.
+- Historial persistent `sips_files`, únic per origen/procediment/empresa/UUID. Els enllaços temporals de descàrrega i els tokens no es desen ni s'escriuen als logs.
+- Descàrrega en streaming a `.part`, verificació de bytes i MD5 proporcionats per CNMC i canvi de nom atòmic. MD5 només és la suma de comprovació del protocol; la seguretat del transport és HTTPS amb verificació TLS. No s'envia el token als enllaços de descàrrega, ni se segueixen redireccions ni enllaços a altres orígens.
+- ZIP amb múltiples CSV: un `ImportJob` per membre suportat, amb noms locals independents de les rutes del ZIP. No s'extreuen rutes remotes directament.
+- Un bloqueig PostgreSQL evita sincronitzadors simultanis. La creació de jobs és transaccional; si Redis falla entre el commit i l'encolat, la passada següent recupera els jobs sense tornar a descarregar ni duplicar-los.
+- Publicacions ordenades per disponibilitat. No es passa a la següent fins que tots els jobs de l'anterior acabin sense files rebutjades. Una publicació antiga apareguda tard es bloqueja per evitar sobreescriure dades més noves.
+- Errors de xarxa/descàrrega/encolat es reintenten a la passada següent. Errors d'importació o formats desconeguts requereixen revisió; no es marquen com a èxit. El ZIP verificat es conserva fins a completar l'import; després s'eliminen els fitxers i es conserva l'historial.
+
+```bash
+docker compose --profile sips run --rm sips-sync python sips_sync.py --status
+# Retorna receipt, estat, error, membres ignorats i job_ids.
+curl http://localhost:8000/api/jobs/123
+curl http://localhost:8000/api/jobs/123/chunks
+# Després de resoldre la causa (vegeu també /jobs/123):
+curl -X POST http://localhost:8000/api/jobs/123/retry-failed-chunks
+curl -X POST http://localhost:8000/api/jobs/123/requeue
+```
+
+No esborris manualment fonts/chunks d'imports SIPS pendents. Els jobs encallats per una caiguda del worker segueixen utilitzant els mecanismes existents de reencolat; el sincronitzador no força un job que podria continuar executant-se. Si un fitxer pendent caduca a CNMC abans de poder descarregar-lo, cal que CNMC el torni a posar a disposició. Una entrada antiga bloquejada necessita revisió operativa; no es descarta silenciosament.
+
+**Abast dels formats:** PS d'electricitat, consums i coeficients de repartiment d'autoconsum amb les capçaleres de `app/constants.py`. La descàrrega normalitza només les sis variants de majúscules documentades per CNMC 4.0 (`husoPS`, `bandaPS`, `paisPS`, `poblacionPS`, `paisTitular`, `poblacionTitular`). No s'han afegit models de gas, LOPD, vertits, multicomercialitzador o potències temporals. Els membres no compatibles d'un ZIP consten a `ignored_members`; un fitxer sense cap CSV compatible falla. Els canvis futurs de format es rebutgen, no s'importen amb columnes desplaçades. Manté els upserts actuals: no elimina registres absents d'una publicació ni aplica baixes/oposicions automàticament.
+
+Fonts del contracte implementat:
+- [Tràmit SIPS i requisits d'accés](https://sede.cnmc.gob.es/tramites/energia-electricidad-energia-gas/bases-de-datos-de-consumidores-y-puntos-de-suministro)
+- [OAuth2 i equivalències de rutes](https://sede.cnmc.gob.es/documentacion/api-publico/metodo-de-autenticacion)
+- [Consulta i descàrrega de fitxers](https://sede.cnmc.gob.es/documentacion/api-publico/descarga)
 
 ## Executar amb Docker Compose
 
@@ -151,7 +223,7 @@ El `docker-compose.yml` utilitza una sola imatge per `app` i `worker`, amb coman
 - `app`: `uvicorn app.main:app --host 0.0.0.0 --port 8000`
 - `worker`: `python worker.py`
 
-Important: la imatge Docker ha d'incloure la carpeta `migrations/`, o les migracions SQL pendents no s'aplicaran a l'arrencada.
+Important: la imatge Docker ha d'incloure la carpeta `migrations/`, o les migracions SQL pendents no s'aplicaran a l'arrencada. Compose espera que PostgreSQL i Redis estiguin saludables; la creació inicial de taules i les migracions comparteixen un bloqueig PostgreSQL entre app, worker i sincronitzador.
 
 Escalar workers:
 

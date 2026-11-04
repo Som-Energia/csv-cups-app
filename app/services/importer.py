@@ -678,12 +678,15 @@ def refresh_import_job_status(db: Session, job_id):
             job.failed_chunks
         )
     else:
-        job.status = JOB_STATUS_COMPLETED
+        # Automatic SIPS imports must not discard their sources or report success
+        # when rows were rejected. Retain artifacts for the existing requeue API.
+        sips_rows_rejected = getattr(job, "sips_file_id", None) is not None and bool(job.error_rows)
+        job.status = JOB_STATUS_FAILED if sips_rows_rejected else JOB_STATUS_COMPLETED
         now = utcnow()
         job.finished_at = now
         job.last_progress_at = now
         job.processed_bytes = job.total_bytes
-        job.error_message = None
+        job.error_message = "SIPS import has rejected rows; review the source and requeue." if sips_rows_rejected else None
 
     db.commit()
     return job

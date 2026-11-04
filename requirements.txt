@@ -6,3 +6,4 @@ python-multipart==0.0.32
 psycopg2-binary==2.9.9
 redis==5.0.8
 rq==1.16.2
+requests==2.32.5

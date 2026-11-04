@@ -44,9 +44,9 @@ def apply_migration(cursor, migration_path: Path):
     )
 
 
-def run_pending_migrations(engine):
+def run_pending_migrations(engine, metadata=None):
     migration_files = get_migration_files()
-    if not migration_files:
+    if not migration_files and metadata is None:
         return
 
     connection = engine.raw_connection()
@@ -55,6 +55,11 @@ def run_pending_migrations(engine):
         try:
             cursor.execute("SELECT pg_advisory_lock(%s)", (MIGRATIONS_LOCK_ID,))
             connection.commit()
+
+            # create_all also needs the lock: app, worker and SIPS may all start
+            # against an empty database simultaneously.
+            if metadata is not None:
+                metadata.create_all(bind=engine)
 
             ensure_schema_migrations_table(cursor)
             connection.commit()

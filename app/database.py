@@ -10,8 +10,10 @@ Base = declarative_base()
 
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
-    run_pending_migrations(engine)
+    # Register tables even when the worker starts before the HTTP application.
+    from app import models  # noqa: F401
+
+    run_pending_migrations(engine, metadata=Base.metadata)
 
 
 def get_db():

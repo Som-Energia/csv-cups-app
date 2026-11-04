@@ -2,12 +2,35 @@ from datetime import datetime
 
 from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 
+from sqlalchemy.orm import Mapped, mapped_column
+
 from app.database import Base
+
+
+class SipsFile(Base):
+    __tablename__ = "sips_files"
+    __table_args__ = (UniqueConstraint("source", "remote_id", name="uq_sips_source_remote"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    remote_id: Mapped[str] = mapped_column(String, nullable=False)
+    filename: Mapped[str] = mapped_column(String, nullable=False)
+    md5: Mapped[str] = mapped_column(String(32), nullable=False)
+    total_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    available_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ignored_members: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ImportJob(Base):
     __tablename__ = "import_jobs"
+    __table_args__ = (UniqueConstraint("sips_file_id", "sips_member", name="uq_import_job_sips_member"),)
 
+    sips_file_id = Column(Integer, ForeignKey("sips_files.id"), nullable=True, index=True)
+    sips_member = Column(String, nullable=True)
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String, nullable=False)
     stored_path = Column(String, nullable=False)

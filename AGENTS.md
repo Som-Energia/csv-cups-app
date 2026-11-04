@@ -24,6 +24,7 @@ Components operatius:
 - `worker`: consumidor de la cua
 - `postgres`: dades persistides
 - `redis`: backend de cua
+- `sips-sync`: consulta i descarrega SIPS (opcional, perfil Compose `sips`); mateix volum i BD/cua que app/worker
 
 ## Regla d'or
 
@@ -47,6 +48,9 @@ Molta gent toca nomes l'API i s'oblida del worker. Aixo trenca produccio.
 - `app/jobs.py`: Redis i cua RQ
 - `app/database.py`: engine SQLAlchemy i `init_db()`
 - `worker.py`: entry point del worker
+- `sips_sync.py`: servei periodic, `--once` per cron i `--status` per seguiment
+- `app/services/sips_client.py`: OAuth2 CNMC, consulta DISPONIBLE/DESCARGADO i descarrega verificada
+- `app/services/sips_sync.py`: inbox persistent, preparacio multi-CSV i lliurament a RQ
 - `docker-compose.yml`: desenvolupament local amb un `worker` escalable
 - `migrations/*.sql`: canvis manuals de schema/indexos
 
@@ -61,6 +65,13 @@ Variables suportades:
 - `IMPORT_CHUNK_SIZE`
 - `IMPORT_SPLIT_ROWS`
 - `UPLOAD_CHUNK_SIZE`
+- `SIPS_API_URL` (HTTPS, default `https://api.cnmc.gob.es`)
+- `SIPS_CONSUMER_KEY`, `SIPS_CONSUMER_SECRET` (credencials vigents; nomes al sincronitzador)
+- `SIPS_CONSUMER_SECRET_FILE` (secret muntat, preferent sobre variable)
+- `SIPS_NIF_EMPRESA`, `SIPS_PROCEDURE_ID` (obligatoris per SIPS, no endevinar ID)
+- `SIPS_FILE_TYPES` (llista de tipus CNMC exactes separats per comes; buit = tots els CSV/ZIP)
+- `SIPS_POLL_SECONDS` (3600, minim 10)
+- `SIPS_MAX_DOWNLOAD_BYTES` (53687091200), `SIPS_MAX_UNPACKED_BYTES` (536870912000)
 
 Les tres critiques son:
 
@@ -92,10 +103,11 @@ NO creis `worker2`, `worker3`, etc. Es pitjor manteniment per no guanyar res.
 
 ## Formats de dades suportats
 
-Hi ha dos formats d'importacio:
+Hi ha tres formats d'importacio:
 
 1. `ps`
 2. `consumption`
+3. `autoconsumo`
 
 La deteccio es fa comparant exactament les capcaleres del CSV.
 
@@ -113,6 +125,8 @@ Taules:
 - `import_job_chunks`: estat per chunk
 - `records`: dades PS, unic per `cups`
 - `record_consumptions`: consums, unic per `cups + periode`
+- `sips_files`: historial unic per origen/procediment/empresa/UUID; migracio `0014`
+- `import_jobs.sips_file_id` i `sips_member`: vinculacio opcional, unica per fitxer/membre
 
 El codi usa upserts PostgreSQL via `sqlalchemy.dialects.postgresql.insert`.
 
@@ -124,9 +138,10 @@ Gotcha IMPORTANT:
 
 - hi ha SQLs a `migrations/`
 - el runtime actual SI executa migracions automatiques a startup
-- `init_db()` fa `Base.metadata.create_all(bind=engine)` i despres executa els SQL pendents de `migrations/`
+- `init_db()` registra els models i fa `Base.metadata.create_all(bind=engine)` i els SQL pendents dins del mateix bloqueig de migracions
 - les migracions aplicades es registren a `schema_migrations`
-- `app` i `worker` es coordinen amb `pg_advisory_lock` per evitar doble execucio concurrent
+- `app`, `worker` i `sips-sync` es coordinen amb `pg_advisory_lock` per evitar doble execucio concurrent, inclosa la creacio inicial
+- Compose espera healthchecks de PostgreSQL i Redis abans d'arrencar els processos
 
 Aixo vol dir que:
 
@@ -172,7 +187,7 @@ Flux de consulta:
 - no introdueixis abstraccions noves si no hi ha dolor real
 - si toques importacio, revisa sempre impacte a `app/main.py`, `app/jobs.py`, `worker.py` i `app/services/importer.py`
 - si canvies configuracio, reflecteix-ho a `README.md` i a aquest `AGENTS.md`
-- no assumeixis que hi ha tests que et salvaran: avui no n'hi ha
+- hi ha tests a `tests/`; els d'integracio necessiten serveis locals aillats (vegeu `tests/README.md`)
 
 ## Verificacions utils
 
@@ -194,6 +209,20 @@ Si el canvi afecta imports:
 - comprova que el job passa a `queued`
 - comprova que un worker el consumeix
 - comprova resultat a `/api/jobs/{id}`
+
+## Invariants del sincronitzador SIPS
+
+- OAuth2 client_credentials; no OAuth1 (retirat 13/10/2026). Cal alta CNMC previa.
+- Descarrega anonima amb l'URL retornat, nomes HTTPS del mateix origen, sense redirects. Mai logs de secrets, tokens o URLs de descarrega.
+- Streaming, MD5 CNMC + mida, `.part` i rename atomic. MD5 no es usa per autenticacio.
+- Lock PostgreSQL de sessio, no lock Redis amb TTL que podria caducar a mitja descarrega.
+- Persistir recepcio i jobs abans d'encolar; IDs RQ estables recuperen errors d'encolat.
+- No marcar complet fins que TOTS els jobs acabin sense errors. No aplicar publicacions noves abans de completar les anteriors; snapshots antics rebuts tard es bloquegen.
+- No eliminar fonts pendents. Fitxers verificats es conserven fins a completar; l'historial persisteix despres de la neteja.
+- SIPS prepara multiples CSV per ZIP i normalitza sis aliases de capcalera CNMC 4.0; les pujades manuals mantenen la validacio existent.
+- Gas i altres formats no modelats no s'importen: membres ignorats visibles a `--status`; cap CSV compatible = error. No s'apliquen baixes/oposicions ni s'esborren registres absents d'un snapshot.
+- Problemes de format/importacio requereixen revisio i reencolat existent; errors de transport/Redis es reintenten periodicament. Credencials i expiracio de fitxers remots requereixen actuacio del titular/CNMC.
+- L'app no autentica usuaris: protegir-la externament i garantir confidencialitat. Nous fitxers 0600/directoris 0700: processos amb mateix UID o permisos explicits.
 
 ## Errors habituals
 

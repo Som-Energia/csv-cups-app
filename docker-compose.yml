@@ -1,14 +1,16 @@
 x-app-common: &app-common
   build: .
-  environment:
+  environment: &app-environment
     DATABASE_URL: postgresql+psycopg2://csvapp:csvapp@postgres:5432/csvapp
     REDIS_URL: redis://redis:6379/0
     UPLOAD_DIR: /app/storage/uploads
   volumes:
     - ./storage:/app/storage
   depends_on:
-    - postgres
-    - redis
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
 
 services:
   app:
@@ -21,12 +23,35 @@ services:
     <<: *app-common
     command: ["python", "worker.py"]
 
+  sips-sync:
+    <<: *app-common
+    profiles: ["sips"]
+    command: ["python", "sips_sync.py"]
+    restart: unless-stopped
+    environment:
+      <<: *app-environment
+      SIPS_API_URL: ${SIPS_API_URL:-https://api.cnmc.gob.es}
+      SIPS_CONSUMER_KEY: ${SIPS_CONSUMER_KEY:-}
+      SIPS_CONSUMER_SECRET: ${SIPS_CONSUMER_SECRET:-}
+      SIPS_CONSUMER_SECRET_FILE: ${SIPS_CONSUMER_SECRET_FILE:-}
+      SIPS_NIF_EMPRESA: ${SIPS_NIF_EMPRESA:-}
+      SIPS_PROCEDURE_ID: ${SIPS_PROCEDURE_ID:-}
+      SIPS_FILE_TYPES: ${SIPS_FILE_TYPES:-}
+      SIPS_POLL_SECONDS: ${SIPS_POLL_SECONDS:-3600}
+      SIPS_MAX_DOWNLOAD_BYTES: ${SIPS_MAX_DOWNLOAD_BYTES:-53687091200}
+      SIPS_MAX_UNPACKED_BYTES: ${SIPS_MAX_UNPACKED_BYTES:-536870912000}
+
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: csvapp
       POSTGRES_USER: csvapp
       POSTGRES_PASSWORD: csvapp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U csvapp -d csvapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     ports:
       - "5433:5432"
     volumes:
@@ -34,6 +59,11 @@ services:
 
   redis:
     image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
 volumes:
   postgres_data:

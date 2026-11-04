@@ -1,4 +1,46 @@
-# CUPS focused tests
+# CUPS and SIPS tests
+
+## SIPS synchronization
+
+Unit tests (no CNMC credentials, PostgreSQL or Redis required):
+
+```bash
+pip install -r requirements.txt -r tests/requirements.txt
+python -m unittest tests.test_sips_sync -v
+```
+
+End-to-end tests use a local HTTPS CNMC fixture with a temporary trusted certificate,
+real PostgreSQL, Redis and an RQ worker subprocess. They verify OAuth2, anonymous
+checksummed download, multi-member ZIP imports, HTTP record/job queries, subsequent
+updates without duplicate downloads, rejected-row recovery, the synchronizer lock,
+concurrent initialization on an empty database and upgrading existing import tables. `openssl` must be installed. No live CNMC data/credentials are used.
+
+**Destructive, disposable services only:** the suite resets the `public` schema in
+`sips_sync_test` and flushes local Redis DB 15. It refuses other database names or
+non-local hosts. Keep these ports separate from development/production services.
+
+```bash
+docker run -d --rm --name csv-sips-test-pg \
+  -p 127.0.0.1:55439:5432 \
+  -e POSTGRES_USER=csvapp -e POSTGRES_PASSWORD=csvapp \
+  -e POSTGRES_DB=sips_sync_test postgres:16-alpine
+docker run -d --rm --name csv-sips-test-redis \
+  -p 127.0.0.1:56389:6379 redis:7-alpine
+# Wait for PostgreSQL to report ready before running the suite.
+docker exec csv-sips-test-pg pg_isready -U csvapp -d sips_sync_test
+SIPS_INTEGRATION_TEST=1 \
+DATABASE_URL=postgresql+psycopg2://csvapp:csvapp@127.0.0.1:55439/sips_sync_test \
+REDIS_URL=redis://127.0.0.1:56389/15 \
+UPLOAD_DIR=/tmp/csv-sips-integration-uploads \
+python -m unittest tests.test_sips_integration -v
+docker stop csv-sips-test-pg csv-sips-test-redis
+```
+
+The authenticated production CNMC connection must be checked by the operator with
+their authorized credentials (`python sips_sync.py --once`, then `--status`).
+Never put real tokens, signed download links or personal records in test fixtures.
+
+## Existing CUPS suites
 
 Install the test-only HTTP client before running the HTTP suite:
 

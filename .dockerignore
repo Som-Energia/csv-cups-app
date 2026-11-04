@@ -2,3 +2,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 storage/
+.env
+.env.*
+!.env.example
+.git/
+secrets/

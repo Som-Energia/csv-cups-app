@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY migrations ./migrations
-COPY worker.py ./worker.py
+COPY worker.py sips_sync.py ./
 RUN mkdir -p /app/storage/uploads
 
 EXPOSE 8000
