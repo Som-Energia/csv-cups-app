@@ -1,4 +1,6 @@
 """CNMC OAuth2 download API. Never persist or log bearer download URLs."""
+import base64
+import binascii
 import hashlib
 import os
 import re
@@ -30,18 +32,25 @@ def parse_remote_file(item):
         remote_id = str(item["uuid"])
         filename = str(item["nombre"])
         size = int(item["numeroBytes"])
-        digest = str(item["hash"]).lower()
+        raw_digest = str(item["hash"]).strip()
+        if re.fullmatch(r"[0-9a-fA-F]{32}", raw_digest):
+            digest = raw_digest.lower()
+        else:
+            decoded_digest = base64.b64decode(raw_digest, validate=True)
+            if len(decoded_digest) != 16:  # CNMC's MD5 checksum is 16 bytes.
+                raise ValueError
+            digest = decoded_digest.hex()
         # CNMC prose uses uriDescargas; its JSON examples use uriDescarga.
         url = item.get("uriDescarga") or item["uriDescargas"]
         available = datetime.fromisoformat(item["fechaDisponibilidad"].replace("Z", "+00:00"))
         if available.tzinfo:
             available = available.astimezone(timezone.utc).replace(tzinfo=None)
-        if not remote_id or not filename or size <= 0 or not re.fullmatch(r"[0-9a-f]{32}", digest):
+        if not remote_id or not filename or size <= 0:
             raise ValueError
         if not isinstance(url, str):
             raise ValueError
         return RemoteFile(remote_id, filename, size, digest, available, url)
-    except (KeyError, TypeError, ValueError):
+    except (binascii.Error, KeyError, TypeError, ValueError):
         raise SipsError("Invalid CNMC file metadata") from None
 
 
@@ -70,11 +79,11 @@ class SipsClient:
         return response
 
     @staticmethod
-    def check_response(response):
+    def check_response(response, operation):
         if response.status_code != 200:
             code = response.status_code
             response.close()
-            raise SipsError(f"CNMC returned HTTP {code}")
+            raise SipsError(f"CNMC returned HTTP {code} during {operation}")
 
     def authenticate(self):
         with self.request(
@@ -82,7 +91,7 @@ class SipsClient:
             auth=(self.config.sips_consumer_key, self.config.sips_consumer_secret),
             data={"grant_type": "client_credentials", "scope": "read"},
         ) as response:
-            self.check_response(response)
+            self.check_response(response, "OAuth2 authentication")
             try:
                 payload = response.json()
                 token = payload["access_token"]
@@ -107,7 +116,7 @@ class SipsClient:
                 if response.status_code == 401 and attempt == 0:
                     self.expires_at = 0
                     continue
-                self.check_response(response)
+                self.check_response(response, f"file consultation ({state})")
                 try:
                     payload = response.json()
                 except ValueError:
@@ -147,7 +156,7 @@ class SipsClient:
         size = 0
         try:
             with self.request("GET", remote.url, stream=True, headers={"Accept-Encoding": "identity"}) as response:
-                self.check_response(response)
+                self.check_response(response, "file download")
                 with partial.open("wb") as output:
                     os.chmod(partial, 0o600)
                     for block in response.iter_content(chunk_size=1024 * 1024):

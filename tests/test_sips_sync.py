@@ -1,4 +1,3 @@
-import hashlib
 import io
 import json
 import tempfile
@@ -40,7 +39,7 @@ def config(directory):
 
 def metadata(**overrides):
     item = dict(uuid="file-1", nombre="2026-10-01_electricidad_ps.zip", numeroBytes="3",
-                hash=hashlib.md5(b"abc").hexdigest(), fechaDisponibilidad="2026-10-01T00:00:00Z",
+                hash="900150983cd24fb0d6963f7d28e17f72", fechaDisponibilidad="2026-10-01T00:00:00Z",
                 uriDescarga="https://api.cnmc.gob.es/ficheros/v1/descarga/secret-url",
                 idProcedimiento="42", nifEmpresa="A12345678", tipoFichero="SIPS-PS")
     return dict(item, **overrides)
@@ -65,10 +64,13 @@ class SipsClientTests(unittest.TestCase):
         self.addCleanup(self.client.close)
         self.client.http = Mock()
 
-    def test_metadata_accepts_both_documented_uri_spellings(self):
+    def test_metadata_accepts_both_uri_spellings_and_checksum_encodings(self):
         item = metadata()
         item["uriDescargas"] = item.pop("uriDescarga")
         self.assertEqual(parse_remote_file(item).available_at, datetime(2026, 10, 1))
+        self.assertEqual(parse_remote_file(item).md5, "900150983cd24fb0d6963f7d28e17f72")
+        item["hash"] = "kAFQmDzST7DWlj99KOF/cg=="
+        self.assertEqual(parse_remote_file(item).md5, "900150983cd24fb0d6963f7d28e17f72")
         for changes in ({"hash": "wrong"}, {"numeroBytes": -1}, {"fechaDisponibilidad": "bad"}):
             with self.assertRaises(SipsError):
                 parse_remote_file(metadata(**changes))
@@ -133,7 +135,7 @@ class SipsClientTests(unittest.TestCase):
 
     def test_auth_errors_do_not_expose_secrets(self):
         self.client.http.request.return_value = response(403, {"secret": "sensitive"})
-        with self.assertRaisesRegex(SipsError, "HTTP 403") as caught:
+        with self.assertRaisesRegex(SipsError, "HTTP 403 during OAuth2 authentication") as caught:
             self.client.authenticate()
         self.assertNotIn("sensitive", str(caught.exception))
         self.cfg.sips_consumer_key = ""
