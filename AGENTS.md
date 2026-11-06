@@ -214,6 +214,7 @@ Si el canvi afecta imports:
 ## Invariants del sincronitzador SIPS
 
 - OAuth2 client_credentials; no OAuth1 (retirat 13/10/2026). Cal alta CNMC previa.
+- User-Agent explicit csv-cups-app/<versio> (CNMC SIPS client) a tota la sessio: nginx CNMC retorna 403 HTML amb python-requests per defecte abans de validar OAuth2 (reproduit amb credencials ficticies; amb UA propi respon 401 invalid_client). No atribuir automaticament un 403 a permisos/credencials ni exposar el cos cru de les respostes.
 - Descarrega anonima amb l'URL retornat, nomes HTTPS del mateix origen, sense redirects. Mai logs de secrets, tokens o URLs de descarrega.
 - Streaming, MD5 CNMC + mida, `.part` i rename atomic. MD5 no es usa per autenticacio.
 - Lock PostgreSQL de sessio, no lock Redis amb TTL que podria caducar a mitja descarrega.

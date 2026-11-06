@@ -63,6 +63,9 @@ class SipsClient:
             raise SipsError("SIPS_API_URL must be an HTTPS origin")
         self.origin = (base.scheme, base.netloc)
         self.http = requests.Session()
+        # CNMC's nginx rejects the default python-requests User-Agent with an
+        # HTML 403 before OAuth2 is evaluated. Identify our client explicitly.
+        self.http.headers["User-Agent"] = f"csv-cups-app/{config.app_version} (CNMC SIPS client)"
         # Avoid implicit .netrc credentials on anonymous download requests.
         self.http.trust_env = False
         self.token = ""

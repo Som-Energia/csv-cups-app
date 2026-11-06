@@ -98,6 +98,10 @@ class SipsPipelineIntegrationTests(unittest.TestCase):
                 self.wfile.write(body)
 
             def do_POST(self):
+                # Reproduce the production gateway's rejection of the default
+                # python-requests identity before it reaches OAuth2.
+                if not self.headers.get("User-Agent", "").startswith("csv-cups-app/"):
+                    return self.send(403, b"Forbidden")
                 route = urlsplit(self.path)
                 if route.path == "/oauth2/token":
                     auth = base64.b64encode(b"key:secret").decode()
@@ -129,6 +133,8 @@ class SipsPipelineIntegrationTests(unittest.TestCase):
                 self.send(200, json.dumps(files).encode())
 
             def do_GET(self):
+                if not self.headers.get("User-Agent", "").startswith("csv-cups-app/"):
+                    return self.send(403, b"Forbidden")
                 key = self.path.rsplit("/", 1)[-1]
                 if self.headers.get("Authorization"):
                     fixture.bad_download_auth = True

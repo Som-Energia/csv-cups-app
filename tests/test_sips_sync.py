@@ -90,6 +90,35 @@ class SipsClientTests(unittest.TestCase):
         self.assertEqual(calls[-1].kwargs["headers"]["Authorization"], "Bearer second")
         self.assertTrue(all(not call.kwargs["allow_redirects"] for call in calls))
 
+    def test_prepared_requests_identify_client_and_keep_download_anonymous(self):
+        # Exercise the real Session/PreparedRequest path, not a mocked request().
+        # A gateway rejecting python-requests must see our app's User-Agent on
+        # the token request, both consultations and the anonymous download.
+        client = SipsClient(self.cfg)
+        self.addCleanup(client.close)
+        path = Path(self.temp.name) / "verified.zip"
+        with patch.object(client.http, "send", side_effect=[
+            response(payload={"access_token": "token", "expires_in": 299}),
+            response(payload=[]), response(payload=[metadata()]), response(),
+        ]) as send:
+            files = client.list_files()
+            client.download(files[0], path)
+        self.assertEqual(len(send.call_args_list), 4)
+        prepared = [call.args[0] for call in send.call_args_list]
+        for request in prepared:
+            self.assertEqual(request.headers["User-Agent"], f"csv-cups-app/{self.cfg.app_version} (CNMC SIPS client)")
+        self.assertEqual(prepared[0].headers["Authorization"], "Basic a2V5OnNlY3JldA==")
+        self.assertEqual(prepared[0].headers["Content-Type"], "application/x-www-form-urlencoded")
+        self.assertEqual(prepared[0].body, "grant_type=client_credentials&scope=read")
+        for request in prepared[1:3]:
+            self.assertEqual(request.headers["Authorization"], "Bearer token")
+        self.assertIn("estado=DISPONIBLE", prepared[1].url)
+        self.assertIn("estado=DESCARGADO", prepared[2].url)
+        self.assertNotIn("Authorization", prepared[3].headers)
+        self.assertTrue(all(not call.kwargs["allow_redirects"] for call in send.call_args_list))
+        self.assertFalse(client.http.trust_env)
+        self.assertEqual(path.read_bytes(), b"abc")
+
     def test_filters_types_and_rejects_wrong_company(self):
         self.cfg.sips_file_types = ("SIPS-CONSUMPTION",)
         with patch.object(self.client, "consult", return_value=[metadata()]):

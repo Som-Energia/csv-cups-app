@@ -118,7 +118,7 @@ Variables d'entorn suportades:
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql+psycopg2://csvapp:csvapp@localhost:5432/csvapp` | Connexio SQLAlchemy a PostgreSQL |
 | `REDIS_URL` | `redis://localhost:6379/0` | Connexio Redis per a la cua |
-| `APP_VERSION` | `1.0.2` | Versio mostrada al footer de la UI |
+| `APP_VERSION` | `1.0.3` | Versio mostrada al footer de la UI |
 | `UPLOAD_DIR` | `storage/uploads` sota el projecte | Directori persistent de pujades |
 | `IMPORT_CHUNK_SIZE` | `5000` | Files per lot d'upsert |
 | `IMPORT_SPLIT_ROWS` | `50000` | Files per chunk quan es divideix un import gran |
@@ -183,6 +183,7 @@ Els pendents històrics sense jobs creats per versions anteriors queden en estat
 ### Fiabilitat i seguiment
 
 - OAuth2 `client_credentials`, token reutilitzat fins a la caducitat i una renovació en rebre 401. OAuth 1.0 va ser retirat per la CNMC el 13/10/2026.
+- Les peticions s'identifiquen amb `User-Agent: csv-cups-app/<versió> (CNMC SIPS client)`. S'ha reproduït que nginx de CNMC retorna un 403 HTML amb el `python-requests` per defecte, abans de validar les credencials; un 403 en autenticar no demostra que el secret sigui incorrecte. Els errors indiquen la fase (OAuth2, consulta/estat o descàrrega), sense exposar tokens ni respostes sensibles.
 - Consulta les metadades de `DISPONIBLE` i `DESCARGADO`: una descàrrega fallida o un altre client poden haver canviat l'estat remot. El filtre mensual s'aplica **abans de descarregar**, també en la primera passada.
 - Historial persistent `sips_files`, únic per origen/procediment/empresa/UUID. Els enllaços temporals de descàrrega i els tokens no es desen ni s'escriuen als logs.
 - Descàrrega en streaming a `.part`, verificació de bytes i MD5 proporcionats per CNMC i canvi de nom atòmic. MD5 només és la suma de comprovació del protocol; la seguretat del transport és HTTPS amb verificació TLS. No s'envia el token als enllaços de descàrrega, ni se segueixen redireccions ni enllaços a altres orígens.
