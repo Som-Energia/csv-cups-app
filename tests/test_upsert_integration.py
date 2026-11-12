@@ -94,6 +94,22 @@ class ConditionalUpsertIntegrationTests(unittest.TestCase):
             changed_field="codigoTarifaATR",
         )
 
+    def test_new_consumption_schema_allocates_bigint_ids(self):
+        with self.engine.begin() as connection:
+            connection.execute(text(
+                "SELECT setval(pg_get_serial_sequence('record_consumptions', 'id'), 2147483647, true)"
+            ))
+        row = {
+            **{header: None for header in get_headers_for_format(IMPORT_FORMAT_CONSUMPTION)},
+            "cups": "ES000000000000000002",
+            "fechaInicioMesConsumo": "2026-01-01",
+            "fechaFinMesConsumo": "2026-01-31",
+            "uploaded_at": datetime(2026, 1, 1),
+        }
+        with self.Session() as db:
+            self.assertEqual(upsert_consumption_chunk(db, [row]), (1, 0))
+            self.assertEqual(db.query(RecordConsumption).one().id, 2147483648)
+
     def test_autoconsumo_skips_identical_rows_and_counts_real_changes(self):
         self.assert_conditional_upsert(
             import_format=IMPORT_FORMAT_AUTOCONSUMO,
@@ -114,7 +130,9 @@ class ConditionalUpsertIntegrationTests(unittest.TestCase):
         third_timestamp = second_timestamp + timedelta(days=1)
         fourth_timestamp = third_timestamp + timedelta(days=1)
 
-        base_row = {header: None for header in get_headers_for_format(import_format)}
+        base_row: dict[str, str | datetime | None] = {
+            header: None for header in get_headers_for_format(import_format)
+        }
         base_row.update(key_values)
         base_row["uploaded_at"] = first_timestamp
 

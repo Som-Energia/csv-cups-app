@@ -130,6 +130,13 @@ Taules:
 - `import_jobs.sips_file_id` i `sips_member`: vinculacio opcional, unica per fitxer/membre
 
 El codi usa upserts PostgreSQL via `sqlalchemy.dialects.postgresql.insert`.
+Cada intent d'upsert consumeix seqüencia encara que la fila ja existeixi o no canviï.
+`record_consumptions.id` i la seva seqüencia son `BIGINT` des de `0015`: cal ampliar
+TOTS DOS i resoldre la seqüencia amb `pg_get_serial_sequence`, no assumir-ne el nom
+(instal·lacions antigues poden conservar `records_consumptions_id_seq`). Mai reset/CYCLE.
+La migracio reescriu la taula i reconstrueix indexos amb bloqueig exclusiu: en BD
+grans cal copia, espai de disc/WAL i manteniment amb app/workers/sips-sync aturats.
+Despres es poden reintentar nomes els chunks fallits, sense tornar a pujar la font.
 
 Si canvies claus uniques o indexos, NO et limitis al model Python: pensa en dades existents i SQL manual.
 

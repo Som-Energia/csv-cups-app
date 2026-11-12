@@ -84,6 +84,74 @@ class CupsMigrationIntegrationTests(unittest.TestCase):
             )
         self.connection.commit()
 
+    def test_bigint_migration_recovers_exhausted_legacy_sequence(self):
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                ALTER SEQUENCE record_consumptions_id_seq
+                    RENAME TO records_consumptions_id_seq;
+                INSERT INTO record_consumptions
+                    (id, uploaded_at, cups, fechainiciomesconsumo, fechafinmesconsumo, payload)
+                VALUES (1, NOW(), 'ES000000000000000002', '2026-01-01', '2026-01-31', 'original');
+                SELECT setval('records_consumptions_id_seq', 2147483647, true);
+                """
+            )
+        self.connection.commit()
+
+        # Conflicting upserts still need nextval(), even with only one stored row.
+        upsert_sql = """
+            INSERT INTO record_consumptions
+                (uploaded_at, cups, fechainiciomesconsumo, fechafinmesconsumo, payload)
+            VALUES (NOW(), %s, '2026-01-01', '2026-01-31', %s)
+            ON CONFLICT (cups, fechainiciomesconsumo, fechafinmesconsumo)
+            DO UPDATE SET payload = EXCLUDED.payload
+            RETURNING id
+        """
+        with self.assertRaises(psycopg2.errors.SequenceGeneratorLimitExceeded):
+            with self.connection.cursor() as cursor:
+                cursor.execute(upsert_sql, ('ES000000000000000002', 'updated'))
+        self.connection.rollback()
+
+        migration_sql = (
+            Path(__file__).resolve().parents[1] / 'migrations' / '0015_consumption_bigint_id.sql'
+        ).read_text(encoding='utf-8')
+        with self.connection.cursor() as cursor:
+            cursor.execute(migration_sql)
+            cursor.execute("SELECT last_value FROM records_consumptions_id_seq")
+            self.assertEqual(cursor.fetchone(), (2147483647,))
+            cursor.execute(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_name = 'record_consumptions' AND column_name = 'id'"
+            )
+            self.assertEqual(cursor.fetchone(), ('bigint',))
+            cursor.execute(
+                "SELECT data_type, max_value, cycle FROM pg_sequences "
+                "WHERE sequencename = 'records_consumptions_id_seq'"
+            )
+            self.assertEqual(cursor.fetchone(), ('bigint', 9223372036854775807, False))
+            cursor.execute(upsert_sql, ('ES000000000000000002', 'updated'))
+            self.assertEqual(cursor.fetchone(), (1,))
+            cursor.execute(upsert_sql, ('ES000000000000000003', 'new'))
+            self.assertEqual(cursor.fetchone(), (2147483649,))
+            cursor.execute(migration_sql)  # Safe to run again without rewinding IDs.
+            cursor.execute(upsert_sql, ('ES000000000000000004', 'next'))
+            self.assertEqual(cursor.fetchone(), (2147483650,))
+            cursor.execute('SELECT id, payload FROM record_consumptions ORDER BY id')
+            self.assertEqual(
+                cursor.fetchall(), [(1, 'updated'), (2147483649, 'new'), (2147483650, 'next')]
+            )
+        self.connection.commit()
+
+    def test_bigint_migration_preserves_unused_sequence(self):
+        migration_sql = (
+            Path(__file__).resolve().parents[1] / 'migrations' / '0015_consumption_bigint_id.sql'
+        ).read_text(encoding='utf-8')
+        with self.connection.cursor() as cursor:
+            cursor.execute(migration_sql)
+            cursor.execute("SELECT nextval(pg_get_serial_sequence('record_consumptions', 'id'))")
+            self.assertEqual(cursor.fetchone(), (1,))
+        self.connection.commit()
+
     def test_migration_deduplicates_all_unique_keys_before_truncating(self):
         with self.connection.cursor() as cursor:
             cursor.execute(

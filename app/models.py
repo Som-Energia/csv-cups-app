@@ -211,7 +211,7 @@ class RecordConsumption(Base):
         ),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(BigInteger, primary_key=True, index=True)
     uploaded_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     cups = Column(String(20), nullable=False, index=True)
     fechaInicioMesConsumo = Column(
