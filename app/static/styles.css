@@ -1,23 +1,29 @@
+/* Centralized styles from versioned Som Energia CDN packages. */
+@import url("https://cdn.jsdelivr.net/npm/@somenergia/design-tokens@1.0.0/dist/tokens.css");
+@import url("https://cdn.jsdelivr.net/npm/@somenergia/brand@1.0.0/fonts.css");
+@import url("./corporate.css");
+
 :root {
-    --color-bg: #E3E8DF;
-    --color-surface: #FFFFFF;
-    --color-surface-soft: #F2F5EE;
-    --color-surface-warm: #FFCDB5;
-    --color-text: #0B2E34;
-    --color-text-muted: #4E6763;
-    --color-border: #C8D3C3;
-    --color-border-strong: #9EAD98;
-    --color-accent: #CDFF80;
-    --color-accent-dark: #0C4C27;
-    --color-orange: #FF632B;
-    --color-cool: #AFB5E8;
-    --color-white: #FFFFFF;
-    --shadow-soft: 0 8px 24px rgba(11, 46, 52, 0.08);
+    /* Keep local aliases and fallbacks so the UI survives an unavailable CDN. */
+    --color-bg: var(--som-color-background, #F0F3EC);
+    --color-surface: var(--som-color-surface, #FFFFFF);
+    --color-surface-soft: var(--som-color-surface-muted, #F0F3EC);
+    --color-surface-warm: var(--som-color-warning-surface, #FFE8DC);
+    --color-text: var(--som-color-text, #0B2E34);
+    --color-text-muted: var(--som-color-text-muted, #3D5A5F);
+    --color-border: var(--som-color-border, #CED5D0);
+    --color-border-strong: var(--som-color-border-strong, #9AA8A2);
+    --color-accent: var(--som-color-primary, #CDFF80);
+    --color-accent-dark: var(--som-color-link, #0C4C27);
+    --color-orange: var(--som-color-warning-text, #8A3200);
+    --color-cool: var(--som-color-info-surface, #E8EAFA);
+    --color-white: var(--som-color-surface, #FFFFFF);
+    --shadow-soft: 0 8px 24px var(--som-color-shadow, rgba(11, 46, 52, 0.18));
 }
 
 body {
     margin: 0;
-    font-family: Arial, sans-serif;
+    font-family: var(--som-font-family, Arial, sans-serif);
     background: var(--color-bg);
     color: var(--color-text);
 }
@@ -267,7 +273,7 @@ button:disabled {
 }
 
 .hero-inline-actions .muted {
-    color: rgba(255, 255, 255, 0.86);
+    color: var(--som-color-text-muted, #3D5A5F);
     margin: 0;
 }
 
