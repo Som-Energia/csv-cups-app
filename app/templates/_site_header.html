@@ -1,0 +1,14 @@
+<a class="skip-link" href="#main-content">Salta al contingut</a>
+<header class="site-header">
+    <div class="site-navbar">
+        <a class="site-brand" href="/" aria-label="Som Energia · SIPS · Inici">
+            <img src="https://cdn.jsdelivr.net/npm/@somenergia/brand@1.0.0/logos/logo.svg" alt="Som Energia" width="98" height="60">
+            <span class="site-brand-label">Dades de subministrament <span>SIPS <span class="site-version">v{{ app_version }}</span></span></span>
+        </a>
+        <nav class="site-navigation" aria-label="Navegació principal">
+            <a href="/" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Cerca de CUPS</a>
+            <a href="/imports" {% if request.url.path == '/imports' or request.url.path.startswith('/jobs/') %}aria-current="page"{% endif %}>Importacions</a>
+            <a class="site-corporate-link" href="https://somenergia.coop" target="_blank" rel="noopener noreferrer">Som Energia <span aria-hidden="true">↗</span><span class="visually-hidden"> (s'obre en una pestanya nova)</span></a>
+        </nav>
+    </div>
+</header>
